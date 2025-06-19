@@ -1,0 +1,366 @@
+import copy
+from typing import List, Type, Optional
+import logging
+
+import pandas as pd
+import numpy as np
+
+from indicators import *
+
+import matplotlib.pyplot as plt
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+
+class BaseModel:
+    """
+    Base class for regressions models
+    This class should be inherited by regressions implementations.
+    """
+
+    def __init__(self, name:str, predictors:list = []):
+        """
+        Initialize the model with a name.
+        """
+        self.name = f'{name}-{predictors}'
+        self._is_fitted = False
+        self.predictors = predictors
+
+    def fit(self, train_df: pd.DataFrame ):
+        """
+        Fit the model to the training data.
+        This method should be implemented by subclasses.
+        """
+        raise NotImplementedError("Subclasses should implement this method.")
+
+    def predict(self, test_df: pd.DataFrame):
+        """
+        Predict using the model.
+        This method should be implemented by subclasses.
+        """
+        raise NotImplementedError("Subclasses should implement this method.")
+
+class GroupingStrategy:
+    """
+    Base class for clustering.
+    Should be inherited by different strategies
+    """
+
+    def __init__(self, name: str, attributes: List[str]):
+        self.name = name
+        self.groups_done = False
+        self.attributes = attributes
+
+    def create_groups(self, train_df: pd.DataFrame):
+        """
+        Creates the groups in the training data. Should be inherited by clustering strategies.
+        Should return a pd.Dataframe with added columns corresponding to the groupment, and the name of that columns, the content of the column should be an integer starting from 0.
+        """
+        raise NotImplementedError("Subclasses should implement this method.")
+
+    def predict_group(self, test_df: pd.DataFrame):
+        """
+        Predict the group for the test data.
+        Should add a column to the test DataFrame with the group name.
+        Groups should be created before calling this method.
+        """
+        raise NotImplementedError("Subclasses should implement this method.")
+
+class NeighboringStrategy:
+    """
+    Base class for neighboring strategies.
+    Should be inherited by different strategies.
+    Will be eventually used to train the model only on K nearest neighbors of the target station within the groups.
+    """
+    def __init__(self, name: str, k: int):
+        self.name = name
+        self.k = k  #Number of neighbors to consider
+
+    def find_neighbors(self, group_df: pd.DataFrame, target_id: str):
+        """
+        Find neighbors for the target station in the training data.
+        Should return a list of neighboring station IDs.
+        """
+        raise NotImplementedError("Subclasses should implement this method.")
+    
+class GeneralModel:
+    """
+    A general model class that can implement a base model with a several grouping strategies and an enventual final neighboring strategy.
+    If there is no neighboring strategy, the model will be trained on all groups and all models will be stored in the `models` dictionary.
+    If there is a neighboring strategy, the model will be trained only on the neighbors of the target station within the groups.
+    """
+    def __init__(self, time_step: str, reg_model: BaseModel, grouping_strategy: List[GroupingStrategy]= [], neighboring_strategy: Optional[NeighboringStrategy] = None):
+        """
+        Initialize the model with a name and a grouping strategy.
+        """
+
+        strategy_names = "_".join([g.name for g in grouping_strategy]) if grouping_strategy else ""
+        neighbor_name = f"_{neighboring_strategy.name}_{neighboring_strategy.k}" if neighboring_strategy else ""
+        self.name = f'{reg_model.name}{strategy_names}{neighbor_name}'
+
+
+        self.reg_model                          = copy.deepcopy(reg_model)
+        self.grouping_strategy                  = copy.deepcopy(grouping_strategy)
+        self.neighboring_strategy               = neighboring_strategy
+        self.models: dict                       = {}
+        self._is_fitted : bool                  = False
+        self.all_groups: Optional[dict]         = None
+        self.all_test_groups: Optional[dict]    = None
+        self.res_df: Optional[pd.DataFrame] = None
+
+        if time_step not in ['MONTH', 'YEAR', 'SEASON']:
+            raise ValueError("temporal_step must be one of 'MONTH', 'YEAR', or 'SEASON'")
+        self.time_step = time_step
+        
+        if time_step == 'MONTH':
+            self.data_index = ['ID', 'YEAR', 'MONTH']
+        elif time_step == 'YEAR':
+            self.data_index = ['ID', 'YEAR']
+        elif time_step == 'SEASON':
+            self.data_index = ['ID', 'YEAR', 'SEASON']
+
+    def clean(self, df: pd.DataFrame):
+        """
+        Clean the DataFrame by removing rows with NaN and 0 for 'Q' values in the target variable.
+        This method is called every time a dataframe is passed to the model, before fitting or predicting.
+        It ensures that the DataFrame is clean and ready for modeling.
+        """
+        
+        
+        if 'A' not in df.columns or 'Q' not in df.columns:
+            raise ValueError("Target variables 'A' and 'Q' must be present in the DataFrame.")
+        
+        for p in self.reg_model.predictors:
+            if p not in df.columns:
+                raise ValueError(f"Predictor '{p}' must be present in the DataFrame.")
+        for gr_str in self.grouping_strategy:
+            for attr in gr_str.attributes:
+                if attr not in df.columns:
+                    raise ValueError(f"Grouping attribute '{attr}' must be present in the DataFrame.")
+
+
+        logger.info("Cleaning DataFrame...")
+        rm_df = df[df.isna().any(axis=1) | (df['A'] == 0) | (df['Q'] == 0)]
+        logger.info(f"Removing {len(rm_df)} rows...")
+        
+        if len(rm_df) > 0:
+            logger.info("Following rows will be removed:")
+            logger.info(rm_df[self.data_index])
+
+        df_clean = df.drop(rm_df.index)
+        #Using the data_index as multi index to preserve the structure of the DataFrame, only set it if not already set
+        if not isinstance(df_clean.index, pd.MultiIndex):
+            df_clean = df_clean.set_index(self.data_index)
+
+        return df_clean
+
+    def _apply_grouping_strategy(self, train_df: pd.DataFrame, remaining_strategies: list[type[GroupingStrategy]], group_path="", father_strat: Optional[GroupingStrategy]=None):
+        """Apply recursive grouping strategies to the training DataFrame
+        This method will recursively apply the grouping strategies to the training DataFrame.
+        It will return a dictionary where keys are group paths and values are tuples of DataFrames with
+        the grouped data and the grouping strategy used to create the group."""
+        if len(remaining_strategies) == 0:
+            return {group_path: (train_df, father_strat)}
+
+        
+        
+        
+        current_strat = copy.deepcopy(remaining_strategies[0])
+        remaining_strat = remaining_strategies[1:]
+        logger.info(f"Applying grouping strategy: {current_strat.name}")
+        
+        all_groups = {}
+
+        grouped_df, group_col = current_strat.create_groups(train_df)
+
+        for group_value in grouped_df[group_col].unique():
+            logger.info(f"Processing group: {group_value}")
+            new_path = group_path + f";{current_strat.name}:{group_value}"
+            group_data = grouped_df[grouped_df[group_col]==group_value].drop(columns=[group_col]) #To avoid several columns with the same name in the DataFrame
+
+            subgroups = self._apply_grouping_strategy(group_data, remaining_strat, father_strat=current_strat, group_path=new_path)
+            all_groups.update(subgroups)
+
+        return all_groups
+    
+    def _get_final_groups_only(self, groups_dict: dict):
+        """
+        Get the final groups only from the groups dictionary.
+        This is used to get the final groups after applying all grouping strategies.
+        """
+        
+        logger.info("Getting final groups only...")
+
+        expected = len(self.grouping_strategy)
+        final_groups = {}
+        for group_path, group_df in groups_dict.items():
+            if group_path.count(';') == expected:
+                logger.info(f"Final group found: {group_path}")
+                final_groups[group_path] = group_df
+
+        return final_groups
+
+    def fit(self, train_df: pd.DataFrame):
+        """
+        Fit the model to the training data.
+        This method will create groups using the grouping strategy and then fit the regression model on each group.
+        If a neighboring strategy is provided, it will not fit models. Fitting will be done when predicting.
+        If no neighboring strategy is provided, it will fit the model on all groups.
+        """
+        
+
+        train_df = self.clean(train_df)
+        # Recursively create groups using the grouping strategy
+        
+        logger.info("Creating groups using the grouping strategy...")
+        
+        self.all_groups = self._apply_grouping_strategy(train_df, self.grouping_strategy)
+        final_groups = self._get_final_groups_only(self.all_groups)
+
+        logger.info(f"Total groups created: {len(self.all_groups)}")
+        self.group_done = True
+       
+        if self.neighboring_strategy is None:
+            logger.info("No neighboring strategy provided, fitting models on all groups...")
+            for group_path, (group_df, father_strat) in final_groups.items():
+                logger.info(f"Fitting model for group: {group_path}")
+                # Fit the regression model on the group DataFrame
+                model = copy.deepcopy(self.reg_model)
+                model.fit(group_df)
+                self.models[group_path] = model
+        else:
+            logger.info("Neighboring strategy provided, models will be fitted during prediction.")
+        self._is_fitted = True
+
+    def _predict_groups(self, test_df: pd.DataFrame, remaining_strategies: List[GroupingStrategy], group_path=""):
+        """
+        Recursively predicts the groups for the test DataFrame using the grouping strategy.
+        Return a dictionary where keys are group paths and values are DataFrames with the grouped data.
+        """
+        if self.all_groups is None:
+            raise RuntimeError("Grouping strategy must be applied before prediction.")
+        
+
+        logger.info("Predicting groups for the test DataFrame...")
+        all_test_groups = {}
+
+
+        if len(remaining_strategies) == 0:
+            # If no remaining strategies, return the current group path and DataFrame
+            all_test_groups[group_path] = test_df
+            return all_test_groups
+        
+        remaining = remaining_strategies[1:]
+        current_strat = copy.deepcopy(remaining_strategies[0])
+        logger.info(f"Predicting using grouping strategy: {current_strat.name}")
+        
+        path = group_path + f";{current_strat.name}"
+
+        data, father_strat = self.all_groups[f'{path}:0']
+        grouped_test_data, group_col = father_strat.predict_group(test_df)
+       
+        for group_value in grouped_test_data[group_col].unique():
+            logger.info(f"Processing group: {group_value}")
+            new_path = path + f":{group_value}"
+            group_data = grouped_test_data[grouped_test_data[group_col] == group_value].drop(columns=[group_col])
+            subgroups = self._predict_groups(group_data, remaining, group_path=new_path)
+            all_test_groups.update(subgroups)
+        
+        return all_test_groups
+
+    def predict(self, test_df: pd.DataFrame):
+        """
+        Predict using the model.
+        This method will apply the grouping strategy to the test DataFrame and then use the fitted models to make predictions.
+        If a neighboring strategy is provided, it will use the neighbors of the target station within the groups.
+        """
+        
+
+        if not self._is_fitted:
+            raise RuntimeError("Model must be fitted before prediction.")
+
+        test_df = self.clean(test_df)
+        
+        # Apply grouping strategy to the test DataFrame
+        logger.info("Applying grouping strategy to the test DataFrame...")
+        
+        all_test_groups = self._predict_groups(test_df, self.grouping_strategy)
+        final_test_groups = self._get_final_groups_only(all_test_groups)
+
+        # Prepare results DataFrame
+        res_df = test_df.reset_index()[self.data_index + ['Q']].copy()  # Reset index first
+        res_df = res_df.set_index(self.data_index)  # Set it back as index
+        res_df['Q_sim'] = np.nan
+
+        # Predict using the models for each group
+        for group_path, group_test_df in final_test_groups.items():
+            logger.info(f"Predicting for group: {group_path}")
+            if self.neighboring_strategy is None:
+                if group_path in self.models:
+                    model = self.models[group_path]
+                    group_predictions = model.predict(group_test_df)
+                    res_df.loc[group_test_df.index, 'Q_sim'] = group_predictions['Q_sim'].values
+                else:
+                    logger.info(f"No model found for group: {group_path}, skipping prediction.")
+            else:
+                for id in group_test_df.index:
+
+                    neighbors = self.neighboring_strategy.find_neighbors(group_test_df, id)
+                    if not neighbors:
+                        logger.info(f"No neighbors found for target ID: {id}, skipping prediction.")
+                        continue
+                    
+                    # Create a DataFrame with the neighbors
+                    neighbor_df = group_test_df[group_test_df['ID'].isin(neighbors)]
+                    if not neighbor_df.empty:
+                        model = self.models[group_path]
+                        group_predictions = model.predict(neighbor_df)
+                        res_df.loc[neighbor_df.index, 'Q_sim'] = group_predictions['Q_sim'].values
+        self.res_df = res_df
+        return res_df
+
+    def metrics(self):
+        if self.res_df is None:
+            raise RuntimeError("No predictions made yet. Call predict() first.")
+        pass
+        # logger.info("Evaluating model performance...")
+        # metrics = {
+        #     'NSE': nse(self.res_df['Q'], self.res_df['Q_sim']),
+        #     'PBIAS': pbias(self.res_df['Q'], self.res_df['Q_sim']),
+        #     'RMSE': rmse(self.res_df['Q'], self.res_df['Q_sim']),
+        #     'NRMSE': nrmse(self.res_df['Q'], self.res_df['Q_sim']),
+        #     'MedAPE': medape(self.res_df['Q'], self.res_df['Q_sim']),
+        #     'SMAPE': smape(self.res_df['Q'], self.res_df['Q_sim']),
+        #     'MedSMAPE': medsmape(self.res_df['Q'], self.res_df['Q_sim']),
+        #     'Deciles_sMAPE': flow_deciles_smape(self.res_df['Q'], self.res_df['Q_sim']),
+        # }
+        # logger.info(f"Global Metrics: {metrics}")
+        # # Calculate metrics for each basin
+        # basin_metrics = {}
+        # for basin_id in self.res_df.index.get_level_values('ID').unique():
+        #     basin_df = self.res_df.xs(basin_id, level='ID')
+        #     basin_metrics[basin_id] = {
+        #         'NSE': nse(basin_df['Q'], basin_df['Q_sim']),
+        #         'PBIAS': pbias(basin_df['Q'], basin_df['Q_sim']),
+        #         'RMSE': rmse(basin_df['Q'], basin_df['Q_sim']),
+        #         'NRMSE': nrmse(basin_df['Q'], basin_df['Q_sim']),
+        #         'MedAPE': medape(basin_df['Q'], basin_df['Q_sim']),
+        #         'SMAPE': smape(basin_df['Q'], basin_df['Q_sim']),
+        #         'MedSMAPE': medsmape(basin_df['Q'], basin_df['Q_sim']),
+        #         'Deciles_sMAPE': flow_deciles_smape(basin_df['Q'], basin_df['Q_sim']),
+        #     }
+
+        # # Compute deciles for each metric across all basins
+        # metrics_df = pd.DataFrame(basin_metrics).T  # shape: (n_basins, n_metrics)
+        # deciles = {}
+        # for metric in metrics_df.columns:
+        #     deciles[metric] = metrics_df[metric].quantile([0.1 * i for i in range(1, 10)]).to_dict()
+        # logger.info(f"Deciles for each metric across all basins: {deciles}")
+
+        # return {
+        #     'global_metrics': metrics,
+        #     'basin_metrics': basin_metrics,
+        #     'deciles': deciles
+        # }
