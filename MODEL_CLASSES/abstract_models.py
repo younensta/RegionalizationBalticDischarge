@@ -5,8 +5,7 @@ import logging
 import pandas as pd
 import numpy as np
 
-from indicators import *
-
+import indicators as idcts
 import matplotlib.pyplot as plt
 
 logging.basicConfig(level=logging.INFO)
@@ -108,7 +107,13 @@ class GeneralModel:
         self._is_fitted : bool                  = False
         self.all_groups: Optional[dict]         = None
         self.all_test_groups: Optional[dict]    = None
+        self.final_groups: Optional[dict] = None
+        self.final_test_groups: Optional[dict] = None
+
         self.res_df: Optional[pd.DataFrame] = None
+        self.metrics: Optional[pd.DataFrame] = None
+        self.global_metrics: Optional[pd.DataFrame] = None
+        self.global_metrics: Optional[dict] = None
 
         if time_step not in ['MONTH', 'YEAR', 'SEASON']:
             raise ValueError("temporal_step must be one of 'MONTH', 'YEAR', or 'SEASON'")
@@ -156,7 +161,7 @@ class GeneralModel:
 
         return df_clean
 
-    def _apply_grouping_strategy(self, train_df: pd.DataFrame, remaining_strategies: list[type[GroupingStrategy]], group_path="", father_strat: Optional[GroupingStrategy]=None):
+    def _apply_grouping_strategy(self, train_df: pd.DataFrame, remaining_strategies: list[GroupingStrategy], group_path="", father_strat: Optional[GroupingStrategy]=None):
         """Apply recursive grouping strategies to the training DataFrame
         This method will recursively apply the grouping strategies to the training DataFrame.
         It will return a dictionary where keys are group paths and values are tuples of DataFrames with
@@ -164,21 +169,25 @@ class GeneralModel:
         if len(remaining_strategies) == 0:
             return {group_path: (train_df, father_strat)}
 
-        
-        
-        
+        # Apply the current grouping strategy
+        current_strat = copy.deepcopy(remaining_strategies[0])
+        remaining_strat = remaining_strategies[1:]
+
+        all_groups = {}
         current_strat = copy.deepcopy(remaining_strategies[0])
         remaining_strat = remaining_strategies[1:]
         logger.info(f"Applying grouping strategy: {current_strat.name}")
-        
         all_groups = {}
 
         grouped_df, group_col = current_strat.create_groups(train_df)
 
         for group_value in grouped_df[group_col].unique():
-            logger.info(f"Processing group: {group_value}")
+            logger.info(f"{current_strat.name}:Processing group: {group_value}")
             new_path = group_path + f";{current_strat.name}:{group_value}"
+            
             group_data = grouped_df[grouped_df[group_col]==group_value].drop(columns=[group_col]) #To avoid several columns with the same name in the DataFrame
+            
+            all_groups[new_path] = (group_data, current_strat)
 
             subgroups = self._apply_grouping_strategy(group_data, remaining_strat, father_strat=current_strat, group_path=new_path)
             all_groups.update(subgroups)
@@ -217,14 +226,14 @@ class GeneralModel:
         logger.info("Creating groups using the grouping strategy...")
         
         self.all_groups = self._apply_grouping_strategy(train_df, self.grouping_strategy)
-        final_groups = self._get_final_groups_only(self.all_groups)
+        self.final_groups = self._get_final_groups_only(self.all_groups)
 
         logger.info(f"Total groups created: {len(self.all_groups)}")
         self.group_done = True
        
         if self.neighboring_strategy is None:
             logger.info("No neighboring strategy provided, fitting models on all groups...")
-            for group_path, (group_df, father_strat) in final_groups.items():
+            for group_path, (group_df, father_strat) in self.final_groups.items():
                 logger.info(f"Fitting model for group: {group_path}")
                 # Fit the regression model on the group DataFrame
                 model = copy.deepcopy(self.reg_model)
@@ -286,8 +295,8 @@ class GeneralModel:
         # Apply grouping strategy to the test DataFrame
         logger.info("Applying grouping strategy to the test DataFrame...")
         
-        all_test_groups = self._predict_groups(test_df, self.grouping_strategy)
-        final_test_groups = self._get_final_groups_only(all_test_groups)
+        self.all_test_groups = self._predict_groups(test_df, self.grouping_strategy)
+        self.final_test_groups = self._get_final_groups_only(self.all_test_groups)
 
         # Prepare results DataFrame
         res_df = test_df.reset_index()[self.data_index + ['Q']].copy()  # Reset index first
@@ -295,7 +304,7 @@ class GeneralModel:
         res_df['Q_sim'] = np.nan
 
         # Predict using the models for each group
-        for group_path, group_test_df in final_test_groups.items():
+        for group_path, group_test_df in self.final_test_groups.items():
             logger.info(f"Predicting for group: {group_path}")
             if self.neighboring_strategy is None:
                 if group_path in self.models:
@@ -325,42 +334,105 @@ class GeneralModel:
         if self.res_df is None:
             raise RuntimeError("No predictions made yet. Call predict() first.")
         pass
-        # logger.info("Evaluating model performance...")
-        # metrics = {
-        #     'NSE': nse(self.res_df['Q'], self.res_df['Q_sim']),
-        #     'PBIAS': pbias(self.res_df['Q'], self.res_df['Q_sim']),
-        #     'RMSE': rmse(self.res_df['Q'], self.res_df['Q_sim']),
-        #     'NRMSE': nrmse(self.res_df['Q'], self.res_df['Q_sim']),
-        #     'MedAPE': medape(self.res_df['Q'], self.res_df['Q_sim']),
-        #     'SMAPE': smape(self.res_df['Q'], self.res_df['Q_sim']),
-        #     'MedSMAPE': medsmape(self.res_df['Q'], self.res_df['Q_sim']),
-        #     'Deciles_sMAPE': flow_deciles_smape(self.res_df['Q'], self.res_df['Q_sim']),
-        # }
-        # logger.info(f"Global Metrics: {metrics}")
-        # # Calculate metrics for each basin
-        # basin_metrics = {}
-        # for basin_id in self.res_df.index.get_level_values('ID').unique():
-        #     basin_df = self.res_df.xs(basin_id, level='ID')
-        #     basin_metrics[basin_id] = {
-        #         'NSE': nse(basin_df['Q'], basin_df['Q_sim']),
-        #         'PBIAS': pbias(basin_df['Q'], basin_df['Q_sim']),
-        #         'RMSE': rmse(basin_df['Q'], basin_df['Q_sim']),
-        #         'NRMSE': nrmse(basin_df['Q'], basin_df['Q_sim']),
-        #         'MedAPE': medape(basin_df['Q'], basin_df['Q_sim']),
-        #         'SMAPE': smape(basin_df['Q'], basin_df['Q_sim']),
-        #         'MedSMAPE': medsmape(basin_df['Q'], basin_df['Q_sim']),
-        #         'Deciles_sMAPE': flow_deciles_smape(basin_df['Q'], basin_df['Q_sim']),
-        #     }
+        metric_df = pd.DataFrame(index=self.res_df.index)
+        metric_df['Q'] = self.res_df['Q']
+        metric_df['Q_sim'] = self.res_df['Q_sim']
+        metric_df['error'] = metric_df['Q'] - metric_df['Q_sim']
+        metric_df['abs_error'] = np.abs(metric_df['error'])
+        metric_df['rel_error'] = metric_df['abs_error'] / metric_df['Q']
 
-        # # Compute deciles for each metric across all basins
-        # metrics_df = pd.DataFrame(basin_metrics).T  # shape: (n_basins, n_metrics)
-        # deciles = {}
-        # for metric in metrics_df.columns:
-        #     deciles[metric] = metrics_df[metric].quantile([0.1 * i for i in range(1, 10)]).to_dict()
-        # logger.info(f"Deciles for each metric across all basins: {deciles}")
+        self.metrics = metric_df
 
-        # return {
-        #     'global_metrics': metrics,
-        #     'basin_metrics': basin_metrics,
-        #     'deciles': deciles
-        # }
+        global_metrics = pd.DataFrame(columns=['mean_Q', 'mean_Q_sim', 'mean_error',
+                                              'mean_absolute_error',
+                                              'nse', 'pbias', 'rmse', 'nrmse',
+                                              'medape', 'smape', 'medsmape',
+                                              'flow_deciles_nse', 'flow_deciles_smape'])
+        global_metrics.loc['global', 'mean_Q'] = metric_df['Q'].mean()
+        global_metrics.loc['global', 'mean_Q_sim'] = metric_df['Q_sim']
+        global_metrics.loc['global', 'mean_error'] = metric_df['error'].mean()
+        global_metrics.loc['global', 'mean_absolute_error'] = metric_df['abs_error'].mean()
+        global_metrics.loc['global', 'nse'] = idcts.nse(metric_df['Q'], metric_df['Q_sim'])
+        global_metrics.loc['global', 'pbias'] = idcts.pbias(metric_df['Q'], metric_df['Q_sim'])
+        global_metrics.loc['global', 'rmse'] = idcts.rmse(metric_df['Q'], metric_df['Q_sim'])
+        global_metrics.loc['global', 'nrmse'] = idcts.nrmse(metric_df['Q'], metric_df['Q_sim'])
+        global_metrics.loc['global', 'medape'] = idcts.medape(metric_df['Q'], metric_df['Q_sim'])
+        global_metrics.loc['global', 'smape'] = idcts.smape(metric_df['Q'], metric_df['Q_sim'])
+        global_metrics.loc['global', 'medsmape'] = idcts.medsmape(metric_df['Q'], metric_df['Q_sim'])
+        global_metrics.loc['global', 'flow_deciles_nse'] = idcts.flow_deciles_nse(metric_df['Q'], metric_df['Q_sim'])
+        global_metrics.loc['global', 'flow_deciles_smape'] = idcts.flow_deciles_smape(metric_df['Q'], metric_df['Q_sim'])
+
+
+
+
+        basin_metrics = pd.DataFrame(columns=['ID', 'mean_Q', 'mean_Q_sim', 'mean_error',
+                                              'mean_absolute_error',
+                                              'nse', 'pbias', 'rmse', 'nrmse',
+                                              'medape', 'smape', 'medsmape',
+                                              'flow_deciles_nse', 'flow_deciles_smape'])
+
+        self.basin_metrics = basin_metrics.set_index('ID')
+
+        for basin in metric_df.index.get_level_values('ID').unique():
+            basin_df = metric_df.xs(basin, level='ID')
+            basin_metrics.loc[basin, 'mean_Q'] = basin_df['Q'].mean()
+            basin_metrics.loc[basin, 'mean_Q_sim'] = basin_df['Q_sim'].mean()
+            basin_metrics.loc[basin, 'mean_error'] = basin_df['error'].mean()
+            basin_metrics.loc[basin, 'mean_absolute_error'] = basin_df['abs_error'].mean()
+            basin_metrics.loc[basin, 'nse'] = idcts.nse(basin_df['Q'], basin_df['Q_sim'])
+            basin_metrics.loc[basin, 'pbias'] = idcts.pbias(basin_df['Q'], basin_df['Q_sim'])
+            basin_metrics.loc[basin, 'rmse'] = idcts.rmse(basin_df['Q'], basin_df['Q_sim'])
+            basin_metrics.loc[basin, 'nrmse'] = idcts.nrmse(basin_df['Q'], basin_df['Q_sim'])
+            basin_metrics.loc[basin, 'medape'] = idcts.medape(basin_df['Q'], basin_df['Q_sim'])
+            basin_metrics.loc[basin, 'smape'] = idcts.smape(basin_df['Q'], basin_df['Q_sim'])
+            basin_metrics.loc[basin, 'medsmape'] = idcts.medsmape(basin_df['Q'], basin_df['Q_sim'])
+            basin_metrics.loc[basin, 'flow_deciles_nse'] = idcts.flow_deciles_nse(basin_df['Q'], basin_df['Q_sim'])
+            basin_metrics.loc[basin, 'flow_deciles_smape'] = idcts.flow_deciles_smape(basin_df['Q'], basin_df['Q_sim'])
+
+        self.basin_metrics = basin_metrics
+        logger.info("Basin metrics calculated successfully.")
+        
+    def show_results(self, grouped: bool=False):
+        """
+        Show the results of the predictions.
+        This method will plot the predicted vs actual values for each group.
+        """
+        if self.res_df is None:
+            raise RuntimeError("No predictions made yet. Call predict() first.")
+        
+        if grouped:
+            group_labels = []
+
+
+            plt.figure(figsize=(12, 6))
+            colors = plt.cm.get_cmap('tab10', len(self.final_test_groups))
+
+            for i, (group_path, group_df) in enumerate(self.final_test_groups.items()):
+                group_labels.append(group_path)
+                group_res_df = self.res_df.loc[group_df.index]
+                
+                plt.scatter(group_res_df['Q'], group_res_df['Q_sim'], label=group_path, color=colors(i))
+                plt.plot([group_res_df['Q'].min(), group_res_df['Q'].max()], [group_res_df['Q'].min(), group_res_df['Q'].max()], color='black', linestyle='--')
+
+            plt.xlabel(self.data_index[-1])
+            plt.ylabel('Q')
+            plt.title('Actual vs Fitted by Group')
+            plt.legend()
+            plt.xscale('log')
+            plt.yscale('log')
+            plt.tight_layout()
+            plt.show()
+
+        else:
+            plt.figure(figsize=(12, 6))
+            plt.scatter(self.res_df['Q'], self.res_df['Q_sim'], color='blue', label='Predicted vs Actual')
+            plt.plot([self.res_df['Q'].min(), self.res_df['Q'].max()], [self.res_df['Q'].min(), self.res_df['Q'].max()], color='black', linestyle='--')
+            plt.xlabel('Actual Q')
+            plt.ylabel('Predicted Q')
+            plt.title('Actual vs Predicted Q')
+            plt.legend()
+            plt.xscale('log')
+            plt.yscale('log')
+            plt.tight_layout()
+            plt.show()
+        
