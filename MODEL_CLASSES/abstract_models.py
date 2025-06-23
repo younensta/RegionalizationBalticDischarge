@@ -7,6 +7,7 @@ import numpy as np
 
 import indicators as idcts
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -97,7 +98,7 @@ class GeneralModel:
 
         strategy_names = "_".join([g.name for g in grouping_strategy]) if grouping_strategy else ""
         neighbor_name = f"_{neighboring_strategy.name}_{neighboring_strategy.k}" if neighboring_strategy else ""
-        self.name = f'{reg_model.name}{strategy_names}{neighbor_name}'
+        self.name = f'{reg_model.name}_{strategy_names}{neighbor_name}'
 
 
         self.reg_model                          = copy.deepcopy(reg_model)
@@ -111,9 +112,8 @@ class GeneralModel:
         self.final_test_groups: Optional[dict] = None
 
         self.res_df: Optional[pd.DataFrame] = None
-        self.metrics: Optional[pd.DataFrame] = None
-        self.global_metrics: Optional[pd.DataFrame] = None
         self.global_metrics: Optional[dict] = None
+        self.basin_metrics: Optional[pd.DataFrame] = None
 
         if time_step not in ['MONTH', 'YEAR', 'SEASON']:
             raise ValueError("temporal_step must be one of 'MONTH', 'YEAR', or 'SEASON'")
@@ -341,29 +341,22 @@ class GeneralModel:
         metric_df['abs_error'] = np.abs(metric_df['error'])
         metric_df['rel_error'] = metric_df['abs_error'] / metric_df['Q']
 
-        self.metrics = metric_df
+        global_metrics = {}
+        global_metrics['mean_Q'] = metric_df['Q'].mean()
+        global_metrics['mean_Q_sim'] = metric_df['Q_sim']
+        global_metrics['mean_error'] = metric_df['error'].mean()
+        global_metrics['mean_absolute_error'] = metric_df['abs_error'].mean()
+        global_metrics['nse'] = idcts.nse(metric_df['Q'], metric_df['Q_sim'])
+        global_metrics['pbias'] = idcts.pbias(metric_df['Q'], metric_df['Q_sim'])
+        global_metrics['rmse'] = idcts.rmse(metric_df['Q'], metric_df['Q_sim'])
+        global_metrics['nrmse'] = idcts.nrmse(metric_df['Q'], metric_df['Q_sim'])
+        global_metrics['medape'] = idcts.medape(metric_df['Q'], metric_df['Q_sim'])
+        global_metrics['smape'] = idcts.smape(metric_df['Q'], metric_df['Q_sim'])
+        global_metrics['medsmape'] = idcts.medsmape(metric_df['Q'], metric_df['Q_sim'])
+        global_metrics['flow_deciles_nse'] = idcts.flow_deciles_nse(metric_df['Q'], metric_df['Q_sim'])
+        global_metrics['flow_deciles_smape'] = idcts.flow_deciles_smape(metric_df['Q'], metric_df['Q_sim'])
 
-        global_metrics = pd.DataFrame(columns=['mean_Q', 'mean_Q_sim', 'mean_error',
-                                              'mean_absolute_error',
-                                              'nse', 'pbias', 'rmse', 'nrmse',
-                                              'medape', 'smape', 'medsmape',
-                                              'flow_deciles_nse', 'flow_deciles_smape'])
-        global_metrics.loc['global', 'mean_Q'] = metric_df['Q'].mean()
-        global_metrics.loc['global', 'mean_Q_sim'] = metric_df['Q_sim']
-        global_metrics.loc['global', 'mean_error'] = metric_df['error'].mean()
-        global_metrics.loc['global', 'mean_absolute_error'] = metric_df['abs_error'].mean()
-        global_metrics.loc['global', 'nse'] = idcts.nse(metric_df['Q'], metric_df['Q_sim'])
-        global_metrics.loc['global', 'pbias'] = idcts.pbias(metric_df['Q'], metric_df['Q_sim'])
-        global_metrics.loc['global', 'rmse'] = idcts.rmse(metric_df['Q'], metric_df['Q_sim'])
-        global_metrics.loc['global', 'nrmse'] = idcts.nrmse(metric_df['Q'], metric_df['Q_sim'])
-        global_metrics.loc['global', 'medape'] = idcts.medape(metric_df['Q'], metric_df['Q_sim'])
-        global_metrics.loc['global', 'smape'] = idcts.smape(metric_df['Q'], metric_df['Q_sim'])
-        global_metrics.loc['global', 'medsmape'] = idcts.medsmape(metric_df['Q'], metric_df['Q_sim'])
-        global_metrics.loc['global', 'flow_deciles_nse'] = idcts.flow_deciles_nse(metric_df['Q'], metric_df['Q_sim'])
-        global_metrics.loc['global', 'flow_deciles_smape'] = idcts.flow_deciles_smape(metric_df['Q'], metric_df['Q_sim'])
-
-
-
+        self.global_metrics = global_metrics
 
         basin_metrics = pd.DataFrame(columns=['ID', 'mean_Q', 'mean_Q_sim', 'mean_error',
                                               'mean_absolute_error',
@@ -386,8 +379,8 @@ class GeneralModel:
             basin_metrics.loc[basin, 'medape'] = idcts.medape(basin_df['Q'], basin_df['Q_sim'])
             basin_metrics.loc[basin, 'smape'] = idcts.smape(basin_df['Q'], basin_df['Q_sim'])
             basin_metrics.loc[basin, 'medsmape'] = idcts.medsmape(basin_df['Q'], basin_df['Q_sim'])
-            basin_metrics.loc[basin, 'flow_deciles_nse'] = idcts.flow_deciles_nse(basin_df['Q'], basin_df['Q_sim'])
-            basin_metrics.loc[basin, 'flow_deciles_smape'] = idcts.flow_deciles_smape(basin_df['Q'], basin_df['Q_sim'])
+            basin_metrics.at[basin, 'flow_deciles_nse'] = idcts.flow_deciles_nse(basin_df['Q'], basin_df['Q_sim'])
+            basin_metrics.at[basin, 'flow_deciles_smape'] = idcts.flow_deciles_smape(basin_df['Q'], basin_df['Q_sim'])
 
         self.basin_metrics = basin_metrics
         logger.info("Basin metrics calculated successfully.")
@@ -397,42 +390,237 @@ class GeneralModel:
         Show the results of the predictions.
         This method will plot the predicted vs actual values for each group.
         """
+        if self.global_metrics is None:
+            self.metrics()
+
         if self.res_df is None:
             raise RuntimeError("No predictions made yet. Call predict() first.")
-        
+
+        # Create subplot layout: 1 on top, 3 on bottom
+        fig = plt.figure(figsize=(15, 12))
+        gs = gridspec.GridSpec(6, 6)
+
+        # Top subplot spans all 3 columns
+        ax1 = fig.add_subplot(gs[0:2, 0:2])
+        ax2 = fig.add_subplot(gs[0:2, 2:4])
+        ax3 = fig.add_subplot(gs[0:2, 4:6])
+        # Bottom subplots
+        ax4 = fig.add_subplot(gs[2:4, 0:2])
+        ax5 = fig.add_subplot(gs[2:4, 2:4])
+        ax6 = fig.add_subplot(gs[2:4, 4:6])
+        ax7 = fig.add_subplot(gs[4:6, 0:2])
+        ax8 = fig.add_subplot(gs[4:6, 2:4])
+        ax9 = fig.add_subplot(gs[4:6, 4:6])
+
+        fig.suptitle(f"Results for: {self.name}", fontsize=16)
+       
         if grouped:
             group_labels = []
-
-
-            plt.figure(figsize=(12, 6))
-            colors = plt.cm.get_cmap('tab10', len(self.final_test_groups))
+            colors = plt.cm.get_cmap('viridis', len(self.final_test_groups))
 
             for i, (group_path, group_df) in enumerate(self.final_test_groups.items()):
                 group_labels.append(group_path)
                 group_res_df = self.res_df.loc[group_df.index]
-                
-                plt.scatter(group_res_df['Q'], group_res_df['Q_sim'], label=group_path, color=colors(i))
-                plt.plot([group_res_df['Q'].min(), group_res_df['Q'].max()], [group_res_df['Q'].min(), group_res_df['Q'].max()], color='black', linestyle='--')
 
-            plt.xlabel(self.data_index[-1])
-            plt.ylabel('Q')
-            plt.title('Actual vs Fitted by Group')
-            plt.legend()
-            plt.xscale('log')
-            plt.yscale('log')
-            plt.tight_layout()
-            plt.show()
+                ax1.scatter(group_res_df['Q'], group_res_df['Q_sim'], label=group_path, color=colors(i), alpha=0.5)
+                ax1.plot([group_res_df['Q'].min(), group_res_df['Q'].max()], [group_res_df['Q'].min(), group_res_df['Q'].max()], color='black', linestyle='--')
+
+            ax1.set_xlabel(self.data_index[-1])            
+           
+            ax2.set_title('Relative Error by Group')
+            for i, (group_path, group_df) in enumerate(self.final_test_groups.items()):
+                group_res_df = self.res_df.loc[group_df.index]
+                rel_error = (group_res_df['Q_sim'] - group_res_df['Q']) / group_res_df['Q']
+                ax2.scatter(group_res_df['Q'], rel_error, label=group_path, color=colors(i), alpha=0.5)
+                ax2.axhline(0, color='black', linestyle='--')
+            ax3.set_title('Error by Group')
+            for i, (group_path, group_df) in enumerate(self.final_test_groups.items()):
+                group_res_df = self.res_df.loc[group_df.index]
+                abs_error = group_res_df['Q_sim'] - group_res_df['Q']
+                ax3.scatter(group_res_df['Q'], abs_error, label=group_path, color=colors(i), alpha=0.5)
+                ax3.axhline(0, color='black', linestyle='--')
+
+
 
         else:
-            plt.figure(figsize=(12, 6))
-            plt.scatter(self.res_df['Q'], self.res_df['Q_sim'], color='blue', label='Predicted vs Actual')
-            plt.plot([self.res_df['Q'].min(), self.res_df['Q'].max()], [self.res_df['Q'].min(), self.res_df['Q'].max()], color='black', linestyle='--')
-            plt.xlabel('Actual Q')
-            plt.ylabel('Predicted Q')
-            plt.title('Actual vs Predicted Q')
-            plt.legend()
-            plt.xscale('log')
-            plt.yscale('log')
-            plt.tight_layout()
-            plt.show()
+            ax1.set_title('Actual vs Fitted Q')
+            ax1.scatter(self.res_df['Q'], self.res_df['Q_sim'], color='blue', label='Predicted vs Actual', alpha=0.5)
+            ax1.plot([self.res_df['Q'].min(), self.res_df['Q'].max()], [self.res_df['Q'].min(), self.res_df['Q'].max()], color='black', linestyle='--')
+            
+            ax2.set_title('Relative Error')
+            ax2.scatter(self.res_df['Q'], (self.res_df['Q'] - self.res_df['Q_sim']) / self.res_df['Q'], color='blue', label='Relative Error', alpha=0.5)
+            ax2.axhline(0, color='black', linestyle='--')
+
+            ax3.set_title('Error')
+            ax3.scatter(self.res_df['Q'], self.res_df['Q_sim'] - self.res_df['Q'], color='blue', label='Absolute Error', alpha=0.5)
+            ax3.axhline(0, color='black', linestyle='--')
+
+        ax1.set_xlabel('Actual Q')       
+        ax1.set_ylabel('Fitted Q')
+        ax1.set_title('Actual vs Fitted Q')
+        ax1.legend()
+        ax1.set_xscale('log')
+        ax1.set_yscale('log')
+
+        ax2.set_xlabel("Actual Q")
+        ax2.set_ylabel("Relative Error")
+        ax2.set_xscale('log')
+
+        ax3.set_xlabel('Actual Q')
+        ax3.set_ylabel('Error (m3/s)')
+        ax3.set_xscale('log')
+        ax3.set_yscale('linear')
+
         
+        # NSE plot
+        nse_values = self.basin_metrics['nse'].dropna()
+        len_nse = len(nse_values)
+
+        nb = 200
+        x_values = np.linspace(-1, 1, nb)
+        y_values = [np.sum(nse_values > x) / len_nse for x in x_values]
+
+        ax4.plot(x_values, y_values, color='grey', linewidth=2)
+        ax4.set_xlabel('NSE')
+        ax4.set_ylabel("% of basins with NSE > x")
+        ax4.set_title('NSE per Basin')
+        
+        interesting = [0.1, 0.25, 0.5, 0.75, 0.9]  # percentiles of interest
+        colors = plt.cm.get_cmap('winter', len(interesting))
+        
+
+        for j, percentile in enumerate(interesting):
+            nse_value = np.quantile(nse_values, percentile)
+            color = colors(j)
+
+            if nse_value > -1:
+                # Horizontal line from left to intersection point
+                ax4.axhline(y=(1-percentile), xmin=0, xmax=(nse_value + 1) / 2, color=color, linestyle='--', alpha=0.8)
+                # Vertical line from bottom to intersection point
+                ax4.axvline(x=nse_value, ymin=0, ymax=(1-percentile), color=color, linestyle='--', alpha=0.8)
+
+                # Add text label at the intersection point
+                ax4.text(nse_value, 1-percentile, f"{(1-percentile)*100:.0f}%: {nse_value:.2f}", 
+                        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor='none'),
+                        color='black', fontsize=8, ha='left', va='bottom')
+
+
+        ax4.grid(True, alpha=0.3)
+        ax4.set_xlim(-1, 1)
+        ax4.set_ylim(0, 1)
+
+        # PBIAS plot
+        pbias_values = np.abs(self.basin_metrics['pbias'].dropna())
+        len_pbias = len(pbias_values)
+
+        nb = 200
+        x_values = np.linspace(0, 100, nb)
+        y_values = [np.sum(pbias_values < x) / len_pbias for x in x_values]
+
+        ax5.plot(x_values, y_values, color='red', linewidth=2)
+        ax5.set_xlabel('Absolute PBIAS')
+        ax5.set_ylabel("% of basins with |PBIAS| < x")
+        ax5.set_title('PBIAS per Basin')
+
+        interesting = [0.1, 0.25, 0.5, 0.75, 0.9]  # percentiles of interest
+        colors = plt.cm.get_cmap('winter', len(interesting))
+        
+
+        for j, percentile in enumerate(interesting):
+            pbias_value = np.quantile(pbias_values, percentile)
+            color = colors(j)
+
+            if pbias_value > -1:
+                # Horizontal line from left to intersection point
+                ax5.axhline(y=percentile, xmin=0, xmax=pbias_value/100, color=color, linestyle='--', alpha=0.8)
+                # Vertical line from bottom to intersection point
+                ax5.axvline(x=pbias_value, ymin=0, ymax=percentile, color=color, linestyle='--', alpha=0.8)
+
+                # Add text label at the intersection point
+                ax5.text(pbias_value, percentile, f"{percentile*100:.0f}%: {pbias_value:.2f}", 
+                        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor='none'),
+                        color='black', fontsize=8, ha='left', va='bottom')
+
+
+        ax5.grid(True, alpha=0.3)
+        ax5.set_xlim(0, 100)
+        ax5.set_ylim(0, 1)
+
+
+        # MedAPE plot
+        mape_values = self.basin_metrics['medape'].dropna()
+        len_mape = len(mape_values)
+        nb = 200
+        x_values = np.linspace(0, 100, nb)
+        y_values = [np.sum(mape_values < x) / len_mape for x
+                    in x_values]
+        ax6.plot(x_values, y_values, color='green', linewidth=2)
+        ax6.set_xlabel('MedAPE (%)')
+        ax6.set_ylabel("% of basins with MedAPE < x")
+        ax6.set_title('MedAPE per Basin')
+        interesting = [0.1, 0.25, 0.5, 0.75, 0.9]
+        colors = plt.cm.get_cmap('winter', len(interesting))
+        for j, percentile in enumerate(interesting):
+            mape_value = np.quantile(mape_values, percentile)
+            color = colors(j)
+
+            if mape_value > -1:
+                # Horizontal line from left to intersection point
+                ax6.axhline(y=percentile, xmin=0, xmax=mape_value/100, color=color, linestyle='--', alpha=0.8)
+                # Vertical line from bottom to intersection point
+                ax6.axvline(x=mape_value, ymin=0, ymax=percentile, color=color, linestyle='--', alpha=0.8)
+
+                # Add text label at the intersection point
+                ax6.text(mape_value, percentile, f"{percentile*100:.0f}%: {mape_value:.2f}", 
+                        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor='none'),
+                        color='black', fontsize=8, ha='left', va='bottom')
+        ax6.grid(True, alpha=0.3)
+        ax6.set_xlim(0, 100)
+        ax6.set_ylim(0, 1)
+
+        # sMAPE
+        smape_values = self.basin_metrics['smape'].dropna()
+        len_smape = len(smape_values)
+        nb = 200
+        x_values = np.linspace(0, 100, nb)
+        y_values = [np.sum(smape_values < x) / len_smape for x
+                    in x_values]
+        ax7.plot(x_values, y_values, color='purple', linewidth=2)
+        ax7.set_xlabel('sMAPE (%)')
+        ax7.set_ylabel("% of basins with sMAPE < x")
+        ax7.set_title('sMAPE per Basin')
+        interesting = [0.1, 0.25, 0.5, 0.75, 0.9]
+        colors = plt.cm.get_cmap('winter', len(interesting))
+        for j, percentile in enumerate(interesting):
+            smape_value = np.quantile(smape_values, percentile)
+            color = colors(j)
+
+            if smape_value > -1:
+                # Horizontal line from left to intersection point
+                ax7.axhline(y=percentile, xmin=0, xmax=smape_value/100, color=color, linestyle='--', alpha=0.8)
+                # Vertical line from bottom to intersection point
+                ax7.axvline(x=smape_value, ymin=0, ymax=percentile, color=color, linestyle='--', alpha=0.8)
+
+                # Add text label at the intersection point
+                ax7.text(smape_value, percentile, f"{percentile*100:.0f}%: {smape_value:.2f}", 
+                        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor='none'),
+                        color='black', fontsize=8, ha='left', va='bottom')
+        ax7.grid(True, alpha=0.3)
+        ax7.set_xlim(0, 100)
+        ax7.set_ylim(0, 1)
+
+
+    
+
+
+
+
+
+        # Adjust layout and show the plot
+        plt.subplots_adjust(hspace=0.4, wspace=0.4)
+
+
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        plt.show()
+
+

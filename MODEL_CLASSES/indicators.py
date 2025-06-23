@@ -1,4 +1,4 @@
-# This files contains 
+# This files contains the metrics for evaluating model performance
 
 import numpy as np
 
@@ -97,3 +97,5 @@ if __name__ == '__main__':
     print("MedSMAPE:", medsmape(actual, fitted))
     print("Flow Deciles sMAPE:", flow_deciles_smape(actual, fitted))
     print("Flow Deciles NSE:", flow_deciles_nse(actual, fitted))
+
+    

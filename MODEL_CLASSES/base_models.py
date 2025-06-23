@@ -17,7 +17,7 @@ class OlsLogMLR(BaseModel):
     """
 
     def __init__(self, predictors:list = None):
-        super().__init__(f'OLS_Log_MLR:{predictors}', predictors)
+        super().__init__('OLS_Log_MLR:', predictors)
         self.model = None
 
 
@@ -66,7 +66,7 @@ class OlsLogMLR(BaseModel):
         # Inverse log transformation to get the original scale
         predictions = np.exp(predictions) * df_test['A']
         
-        res_df = df_test[['Q']]
-        res_df['Q_sim'] = predictions
+        res_df = df_test[['Q']].copy()
+        res_df.loc[:, 'Q_sim'] = predictions
 
         return res_df
