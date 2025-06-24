@@ -1,6 +1,7 @@
 import copy
 from typing import List, Type, Optional
 import logging
+from tqdm import tqdm
 
 import pandas as pd
 import numpy as np
@@ -56,7 +57,9 @@ class GroupingStrategy:
     def create_groups(self, train_df: pd.DataFrame):
         """
         Creates the groups in the training data. Should be inherited by clustering strategies.
-        Should return a pd.Dataframe with added columns corresponding to the groupment, and the name of that columns, the content of the column should be an integer starting from 0.
+        Should return a pd.Dataframe with added columns corresponding to the groupment, and the name of that columns.
+        The content of the column should be an integer starting from 0.
+        Use pd.Categorical.code if needed to create integers from categories.
         """
         raise NotImplementedError("Subclasses should implement this method.")
 
@@ -111,9 +114,12 @@ class GeneralModel:
         self.final_groups: Optional[dict] = None
         self.final_test_groups: Optional[dict] = None
 
-        self.res_df: Optional[pd.DataFrame] = None
+        self.holdout_df: Optional[pd.DataFrame] = None
         self.global_metrics: Optional[dict] = None
         self.basin_metrics: Optional[pd.DataFrame] = None
+
+        self.loo_df: Optional[pd.DataFrame] = None
+
 
         if time_step not in ['MONTH', 'YEAR', 'SEASON']:
             raise ValueError("temporal_step must be one of 'MONTH', 'YEAR', or 'SEASON'")
@@ -126,7 +132,7 @@ class GeneralModel:
         elif time_step == 'SEASON':
             self.data_index = ['ID', 'YEAR', 'SEASON']
 
-    def clean(self, df: pd.DataFrame):
+    def _clean(self, df: pd.DataFrame):
         """
         Clean the DataFrame by removing rows with NaN and 0 for 'Q' values in the target variable.
         This method is called every time a dataframe is passed to the model, before fitting or predicting.
@@ -220,7 +226,7 @@ class GeneralModel:
         """
         
 
-        train_df = self.clean(train_df)
+        train_df = self._clean(train_df)
         # Recursively create groups using the grouping strategy
         
         logger.info("Creating groups using the grouping strategy...")
@@ -290,7 +296,7 @@ class GeneralModel:
         if not self._is_fitted:
             raise RuntimeError("Model must be fitted before prediction.")
 
-        test_df = self.clean(test_df)
+        test_df = self._clean(test_df)
         
         # Apply grouping strategy to the test DataFrame
         logger.info("Applying grouping strategy to the test DataFrame...")
@@ -306,6 +312,7 @@ class GeneralModel:
         # Predict using the models for each group
         for group_path, group_test_df in self.final_test_groups.items():
             logger.info(f"Predicting for group: {group_path}")
+            
             if self.neighboring_strategy is None:
                 if group_path in self.models:
                     model = self.models[group_path]
@@ -327,16 +334,18 @@ class GeneralModel:
                         model = self.models[group_path]
                         group_predictions = model.predict(neighbor_df)
                         res_df.loc[neighbor_df.index, 'Q_sim'] = group_predictions['Q_sim'].values
-        self.res_df = res_df
         return res_df
 
-    def metrics(self):
-        if self.res_df is None:
-            raise RuntimeError("No predictions made yet. Call predict() first.")
+    def _compute_metrics(self, df: pd.DataFrame):
+        if df is None:
+            raise RuntimeError("No predictions made yet.")
         pass
-        metric_df = pd.DataFrame(index=self.res_df.index)
-        metric_df['Q'] = self.res_df['Q']
-        metric_df['Q_sim'] = self.res_df['Q_sim']
+        if 'Q' not in df.columns or 'Q_sim' not in df.columns:
+            raise ValueError("The results DataFrame must contain 'Q' and 'Q_sim' columns for metric computation.")
+
+        metric_df = pd.DataFrame(index=df.index)
+        metric_df['Q'] = df['Q']
+        metric_df['Q_sim'] = df['Q_sim']
         metric_df['error'] = metric_df['Q'] - metric_df['Q_sim']
         metric_df['abs_error'] = np.abs(metric_df['error'])
         metric_df['rel_error'] = metric_df['abs_error'] / metric_df['Q']
@@ -368,6 +377,7 @@ class GeneralModel:
 
         for basin in metric_df.index.get_level_values('ID').unique():
             basin_df = metric_df.xs(basin, level='ID')
+            
             basin_metrics.loc[basin, 'mean_Q'] = basin_df['Q'].mean()
             basin_metrics.loc[basin, 'mean_Q_sim'] = basin_df['Q_sim'].mean()
             basin_metrics.loc[basin, 'mean_error'] = basin_df['error'].mean()
@@ -381,33 +391,37 @@ class GeneralModel:
             basin_metrics.loc[basin, 'medsmape'] = idcts.medsmape(basin_df['Q'], basin_df['Q_sim'])
             basin_metrics.at[basin, 'flow_deciles_nse'] = idcts.flow_deciles_nse(basin_df['Q'], basin_df['Q_sim'])
             basin_metrics.at[basin, 'flow_deciles_smape'] = idcts.flow_deciles_smape(basin_df['Q'], basin_df['Q_sim'])
+            basin_metrics.loc[basin, 'mape'] = idcts.mape(basin_df['Q'], basin_df['Q_sim'])
 
         self.basin_metrics = basin_metrics
         logger.info("Basin metrics calculated successfully.")
         
-    def show_results(self, grouped: bool=False):
+    def _show_results(self, df, grouped: bool=False, blocked: bool=True):
         """
         Show the results of the predictions.
         This method will plot the predicted vs actual values for each group.
         """
         if self.global_metrics is None:
-            self.metrics()
+            self._compute_metrics(df)
 
-        if self.res_df is None:
+        if df is None:
             raise RuntimeError("No predictions made yet. Call predict() first.")
 
-        # Create subplot layout: 1 on top, 3 on bottom
+        if self.grouping_strategy==[] or self.grouping_strategy is None:
+            grouped = False
+        # Create subplot layout
         fig = plt.figure(figsize=(15, 12))
         gs = gridspec.GridSpec(6, 6)
 
-        # Top subplot spans all 3 columns
+
         ax1 = fig.add_subplot(gs[0:2, 0:2])
         ax2 = fig.add_subplot(gs[0:2, 2:4])
         ax3 = fig.add_subplot(gs[0:2, 4:6])
-        # Bottom subplots
+        
         ax4 = fig.add_subplot(gs[2:4, 0:2])
         ax5 = fig.add_subplot(gs[2:4, 2:4])
         ax6 = fig.add_subplot(gs[2:4, 4:6])
+        
         ax7 = fig.add_subplot(gs[4:6, 0:2])
         ax8 = fig.add_subplot(gs[4:6, 2:4])
         ax9 = fig.add_subplot(gs[4:6, 4:6])
@@ -420,7 +434,7 @@ class GeneralModel:
 
             for i, (group_path, group_df) in enumerate(self.final_test_groups.items()):
                 group_labels.append(group_path)
-                group_res_df = self.res_df.loc[group_df.index]
+                group_res_df = df.loc[group_df.index]
 
                 ax1.scatter(group_res_df['Q'], group_res_df['Q_sim'], label=group_path, color=colors(i), alpha=0.5)
                 ax1.plot([group_res_df['Q'].min(), group_res_df['Q'].max()], [group_res_df['Q'].min(), group_res_df['Q'].max()], color='black', linestyle='--')
@@ -429,13 +443,13 @@ class GeneralModel:
            
             ax2.set_title('Relative Error by Group')
             for i, (group_path, group_df) in enumerate(self.final_test_groups.items()):
-                group_res_df = self.res_df.loc[group_df.index]
+                group_res_df = df.loc[group_df.index]
                 rel_error = (group_res_df['Q_sim'] - group_res_df['Q']) / group_res_df['Q']
                 ax2.scatter(group_res_df['Q'], rel_error, label=group_path, color=colors(i), alpha=0.5)
                 ax2.axhline(0, color='black', linestyle='--')
             ax3.set_title('Error by Group')
             for i, (group_path, group_df) in enumerate(self.final_test_groups.items()):
-                group_res_df = self.res_df.loc[group_df.index]
+                group_res_df = df.loc[group_df.index]
                 abs_error = group_res_df['Q_sim'] - group_res_df['Q']
                 ax3.scatter(group_res_df['Q'], abs_error, label=group_path, color=colors(i), alpha=0.5)
                 ax3.axhline(0, color='black', linestyle='--')
@@ -444,21 +458,20 @@ class GeneralModel:
 
         else:
             ax1.set_title('Actual vs Fitted Q')
-            ax1.scatter(self.res_df['Q'], self.res_df['Q_sim'], color='blue', label='Predicted vs Actual', alpha=0.5)
-            ax1.plot([self.res_df['Q'].min(), self.res_df['Q'].max()], [self.res_df['Q'].min(), self.res_df['Q'].max()], color='black', linestyle='--')
+            ax1.scatter(df['Q'], df['Q_sim'], color='blue', label='Predicted vs Actual', alpha=0.5)
+            ax1.plot([df['Q'].min(), df['Q'].max()], [df['Q'].min(), df['Q'].max()], color='black', linestyle='--')
             
             ax2.set_title('Relative Error')
-            ax2.scatter(self.res_df['Q'], (self.res_df['Q'] - self.res_df['Q_sim']) / self.res_df['Q'], color='blue', label='Relative Error', alpha=0.5)
+            ax2.scatter(df['Q'], (df['Q'] - df['Q_sim']) / df['Q'], color='blue', label='Relative Error', alpha=0.5)
             ax2.axhline(0, color='black', linestyle='--')
 
             ax3.set_title('Error')
-            ax3.scatter(self.res_df['Q'], self.res_df['Q_sim'] - self.res_df['Q'], color='blue', label='Absolute Error', alpha=0.5)
+            ax3.scatter(df['Q'], df['Q_sim'] - df['Q'], color='blue', label='Absolute Error', alpha=0.5)
             ax3.axhline(0, color='black', linestyle='--')
 
         ax1.set_xlabel('Actual Q')       
         ax1.set_ylabel('Fitted Q')
         ax1.set_title('Actual vs Fitted Q')
-        ax1.legend()
         ax1.set_xscale('log')
         ax1.set_yscale('log')
 
@@ -609,11 +622,74 @@ class GeneralModel:
         ax7.set_xlim(0, 100)
         ax7.set_ylim(0, 1)
 
+        #APE cumulative plot
+        utilisables_values = np.abs(df[['Q', 'Q_sim']].dropna())
 
-    
 
+        #Calculate relative error
+        utilisables_values = 100*np.abs((utilisables_values['Q_sim'] - utilisables_values['Q'])/ utilisables_values['Q'])
 
+        len_utilisables = len(utilisables_values)
+        nb = 200
+        x_values = np.linspace(0, 100, nb)
+        y_values = [np.sum(utilisables_values < x) / len_utilisables for x in x_values]
 
+        ax8.plot(x_values, y_values, color='orange', linewidth=2)
+        ax8.set_xlabel('Relative Error')
+        ax8.set_ylabel("% of basins with Relative Error < x")
+        ax8.set_title('Relative Error (by point)')
+        interesting = [0.1, 0.25, 0.5, 0.75, 0.9]
+        colors = plt.cm.get_cmap('winter', len(interesting))
+        for j, percentile in enumerate(interesting):
+            rel_error_value = np.quantile(utilisables_values, percentile)
+            color = colors(j)
+
+            if (rel_error_value > 0 and rel_error_value < 100):
+                # Horizontal line from left to intersection point
+                ax8.axhline(y=percentile, xmin=0, xmax=rel_error_value, color=color, linestyle='--', alpha=0.8)
+                # Vertical line from bottom to intersection point
+                ax8.axvline(x=rel_error_value, ymin=0, ymax=percentile, color=color, linestyle='--', alpha=0.8)
+
+                # Add text label at the intersection point
+                ax8.text(rel_error_value, percentile, f"{percentile*100:.0f}%: {rel_error_value:.2f}", 
+                        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor='none'),
+                        color='black', fontsize=8, ha='left', va='bottom')
+
+        ax8.grid(True, alpha=0.3)
+        ax8.set_xlim(0, 100)
+        ax8.set_ylim(0, 1)
+        #displaying in percentage
+
+        # per basin MAPE plot
+        mape_values = self.basin_metrics['mape'].dropna()
+        len_mape = len(mape_values)
+        nb = 200
+        x_values = np.linspace(0, 100, nb)
+        y_values = [np.sum(mape_values < x) / len_mape for x in x_values]
+        ax9.plot(x_values, y_values, color='brown', linewidth=2)
+        ax9.set_xlabel('MAPE')
+        ax9.set_ylabel("% of basins with MAPE < x")
+        ax9.set_title('MAPE per Basin')
+        interesting = [0.1, 0.25, 0.5,  0.75, 0.9]
+        colors = plt.cm.get_cmap('winter', len(interesting))
+        for j, percentile in enumerate(interesting):
+            mape_value = np.quantile(mape_values, percentile)
+            color = colors(j)
+
+            if  (mape_value > 0 and  mape_value < 100):
+                # Horizontal line from left to intersection point
+                ax9.axhline(y=percentile, xmin=0, xmax=mape_value, color=color, linestyle='--', alpha=0.8)
+                # Vertical line from bottom to intersection point
+                ax9.axvline(x=mape_value, ymin=0, ymax=percentile, color=color, linestyle='--', alpha=0.8)
+
+                # Add text label at the intersection point
+                ax9.text(mape_value, percentile, f"{percentile*100:.0f}%: {mape_value:.2f}", 
+                        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor='none'),
+                        color='black', fontsize=8, ha='left', va='bottom')
+        
+        ax9.grid(True, alpha=0.3)
+        ax9.set_xlim(0, 100)
+        ax9.set_ylim(0, 1)
 
 
         # Adjust layout and show the plot
@@ -621,6 +697,62 @@ class GeneralModel:
 
 
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-        plt.show()
+        plt.show(block=blocked)
+
+    def hold_out_validation(self, df:pd.DataFrame, percent:int =10, random_seed:int =42, show_results:bool =True, grouped:bool =True):
+        """
+        Performs hold-out validation on the provided DataFrame.
+        """
+        np.random.seed(random_seed)
+        ids = df['ID'].unique()
+        test_ids = np.random.choice(ids, size=int(len(ids) * percent / 100), replace=False)
+        
+        train_df = df[~df['ID'].isin(test_ids)]
+        test_df = df[df['ID'].isin(test_ids)]
+
+        #Train the model on the training DataFrame
+        self.fit(train_df)
+        #Evaluate the model on the test DataFrame
+        self.holdout_df = self.predict(test_df)
+        #Show the results
+        if show_results:
+            self._show_results(self.holdout_df, grouped=grouped, blocked=True)
+
+    def leave_one_out_validation(self, df: pd.DataFrame, show_results: bool = True, grouped: bool = False):
+        """
+        Performs leave-one-out validation on the provided DataFrame.
+        Can take a lot of time because it fits a new model for each ID in the Dataframe
+        """
+        # Silence logger during LOO
+        original_level = logging.getLogger().level  # Root logger
+        logging.getLogger().setLevel(logging.ERROR)  # This affects all child loggers
+        
 
 
+        try:
+            df_loo = df[self.data_index+['Q']].copy()
+            df_loo = df_loo.set_index(self.data_index)
+            df_loo['Q_sim'] = np.nan
+
+            ids = df['ID'].unique()
+            
+            # Use tqdm for a nice progress bar
+            for id in tqdm(ids, desc="Leave-one-out validation"):
+                train_df = df[df['ID'] != id]
+                test_df = df[df['ID'] == id]
+
+                self.fit(train_df)
+                res = self.predict(test_df)
+                res_index = res.index #We take res index to leave NaNs where clean deleted rows
+
+                df_loo.loc[res_index, 'Q_sim'] = res['Q_sim'].values
+
+        finally:
+            logger.setLevel(original_level)
+        
+        self.loo_df = df_loo
+        # Show the results
+        if show_results:
+
+            self._show_results(self.loo_df, grouped=grouped, blocked=True)
+        logger.info("Leave-one-out validation completed successfully.")

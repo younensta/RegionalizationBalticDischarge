@@ -82,20 +82,8 @@ def flow_deciles_nse(actual, fitted) -> dict:
 
     return nse_values
 
-if __name__ == '__main__':
-    # Example usage
-    actual = np.array([1, 2, 3, 4, 5])
-    fitted = np.array([1.1, 1.9, 3.2, 4.1, 5.0])
-
-
-    print("NSE:", nse(actual, fitted))
-    print("PBIAS:", pbias(actual, fitted))
-    print("RMSE:", rmse(actual, fitted))
-    print("NRMSE:", nrmse(actual, fitted))
-    print("MedAPE:", medape(actual, fitted))
-    print("sMAPE:", smape(actual, fitted))
-    print("MedSMAPE:", medsmape(actual, fitted))
-    print("Flow Deciles sMAPE:", flow_deciles_smape(actual, fitted))
-    print("Flow Deciles NSE:", flow_deciles_nse(actual, fitted))
-
-    
+def mape(actual, fitted) -> float:
+    """
+    Calculate the Mean Absolute Percentage Error (MAPE) between actual and fitted values.
+    """
+    return np.mean(np.abs((fitted - actual) / actual)) * 100

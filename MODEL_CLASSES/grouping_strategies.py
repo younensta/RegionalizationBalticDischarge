@@ -1,5 +1,7 @@
 from abstract_models import GroupingStrategy
 import pandas as pd
+from k_means_constrained import KMeansConstrained
+from typing import List
 
 class TemporalGrouping(GroupingStrategy):
     """
@@ -26,6 +28,7 @@ class TemporalGrouping(GroupingStrategy):
         
         # Create a new column for the group
         train_df_copy['TEMPORAL_GROUP'] = pd.Categorical(temporal_data).codes
+        self.groups_done = True
         return train_df_copy, 'TEMPORAL_GROUP'
 
     def predict_group(self, test_df):
@@ -44,3 +47,40 @@ class TemporalGrouping(GroupingStrategy):
         # Create a new column for the group
         test_df_copy['TEMPORAL_GROUP'] = pd.Categorical(temporal_data).codes
         return test_df_copy, 'TEMPORAL_GROUP'
+   
+class KmeansClustering(GroupingStrategy):
+    """
+    A grouping strategy that uses K-means clustering.
+    This class inherits from the GroupingStrategy base class.
+    """
+    def __init__(self, cluster_column: List[str], n_clusters: int = 3, min_members: int = 10, random_state: int = 42):
+        self.cluster_column = cluster_column
+        self.min_members = min_members
+        self.n_clusters = n_clusters
+        self.random_state = random_state
+        
+        super().__init__(name=f"Kmeans:{cluster_column}", attributes=cluster_column)
+        self.model = KMeansConstrained(n_clusters=self.n_clusters, size_min=self.min_members, random_state=self.random_state)
+
+    def create_groups(self, train_df):
+        
+        train_df_copy = train_df.copy()
+        train_df_for_clustering = train_df_copy[self.cluster_column]
+
+        # Fit the KMeans model
+        self.model.fit(train_df_for_clustering)
+        # Predict clusters
+        train_df_copy[f'KMEANS_{self.cluster_column}_GROUP'] = self.model.predict(train_df_for_clustering)
+        self.groups_done = True
+
+
+        return train_df_copy, f'KMEANS_{self.cluster_column}_GROUP'
+
+    def predict_group(self, test_df):
+        test_df_copy = test_df.copy()
+        test_df_for_clustering = test_df_copy[self.cluster_column]
+
+        # Predict clusters
+        test_df_copy[f'KMEANS_{self.cluster_column}_GROUP'] = self.model.predict(test_df_for_clustering)
+        return test_df_copy, f'KMEANS_{self.cluster_column}_GROUP'
+    
