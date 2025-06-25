@@ -77,9 +77,10 @@ class NeighboringStrategy:
     Should be inherited by different strategies.
     Will be eventually used to train the model only on K nearest neighbors of the target station within the groups.
     """
-    def __init__(self, name: str, k: int):
+    def __init__(self, name: str, k: int, basin_wise:bool = False): #If basin is True, the strategy only use basin characteritics and neighbors are the same for all lines from the same station.
         self.name = name
         self.k = k  #Number of neighbors to consider
+        self.basin_wise = basin_wise
 
     def find_neighbors(self, group_df: pd.DataFrame, target_id: str):
         """
@@ -321,19 +322,34 @@ class GeneralModel:
                 else:
                     logger.info(f"No model found for group: {group_path}, skipping prediction.")
             else:
-                for id in group_test_df.index:
+                # If a neighboring strategy is provided, find neighbors and predict
+                if self.neighboring_strategy.basin_wise:
+                    for id in group_test_df.index.get_level_values('ID').unique():
 
-                    neighbors = self.neighboring_strategy.find_neighbors(group_test_df, id)
-                    if not neighbors:
-                        logger.info(f"No neighbors found for target ID: {id}, skipping prediction.")
-                        continue
-                    
-                    # Create a DataFrame with the neighbors
-                    neighbor_df = group_test_df[group_test_df['ID'].isin(neighbors)]
-                    if not neighbor_df.empty:
-                        model = self.models[group_path]
+                        neighbors = self.neighboring_strategy.find_neighbors(group_test_df, id)
+                        if len(neighbors)==0:
+                            logger.info(f"No neighbors found for target ID: {id}, skipping prediction.")
+                            continue
+                        
+                        # Create a DataFrame with the neighbors
+                        neighbor_df = group_test_df[group_test_df.index.get_level_values('ID').isin(neighbors)]
+
+                else:# not basin wise, so we can use multiindex
+                    for data_id in group_test_df.index:
+                        neighbors = self.neighboring_strategy.find_neighbors(group_test_df, data_id)
+                        if len(neighbors) == 0:
+                            logger.info(f"No neighbors found for target ID: {data_id}, skipping prediction.")
+                            continue
+                        
+                        # Create a DataFrame with the neighbors
+                        neighbor_df = group_test_df[group_test_df.index.isin(neighbors)]
+                
+                if not neighbor_df.empty:
+                        model = copy.deepcopy(self.reg_model)
+                        model.fit(neighbor_df)  # Fit the model on the neighbors
                         group_predictions = model.predict(neighbor_df)
                         res_df.loc[neighbor_df.index, 'Q_sim'] = group_predictions['Q_sim'].values
+                        
         return res_df
 
     def _compute_metrics(self, df: pd.DataFrame):
