@@ -4,6 +4,7 @@ import logging
 from tqdm import tqdm
 
 import pandas as pd
+import geopandas as gpd
 import numpy as np
 
 import indicators as idcts
@@ -132,6 +133,7 @@ class GeneralModel:
             self.data_index = ['ID', 'YEAR']
         elif time_step == 'SEASON':
             self.data_index = ['ID', 'YEAR', 'SEASON']
+
 
     def _clean(self, df: pd.DataFrame):
         """
@@ -323,32 +325,44 @@ class GeneralModel:
                     logger.info(f"No model found for group: {group_path}, skipping prediction.")
             else:
                 # If a neighboring strategy is provided, find neighbors and predict
+                # Get the corresponding training group for finding neighbors
+                train_group_df = self.final_groups[group_path][0]  # Get the training DataFrame for this group
+                
                 if self.neighboring_strategy.basin_wise:
                     for id in group_test_df.index.get_level_values('ID').unique():
-
-                        neighbors = self.neighboring_strategy.find_neighbors(group_test_df, id)
+                        neighbors = self.neighboring_strategy.find_neighbors(train_group_df, id)
                         if len(neighbors)==0:
                             logger.info(f"No neighbors found for target ID: {id}, skipping prediction.")
                             continue
                         
-                        # Create a DataFrame with the neighbors
-                        neighbor_df = group_test_df[group_test_df.index.get_level_values('ID').isin(neighbors)]
+                        # Create a DataFrame with the neighbors from TRAINING data
+                        neighbor_df = train_group_df[train_group_df.index.get_level_values('ID').isin(neighbors)]
+
+                        if not neighbor_df.empty:
+                            model = copy.deepcopy(self.reg_model)
+                            model.fit(neighbor_df)
+                            # Predict only for this specific test ID
+                            test_id_df = group_test_df[group_test_df.index.get_level_values('ID') == id]
+                            group_predictions = model.predict(test_id_df)
+                            res_df.loc[test_id_df.index, 'Q_sim'] = group_predictions['Q_sim'].values
 
                 else:# not basin wise, so we can use multiindex
                     for data_id in group_test_df.index:
-                        neighbors = self.neighboring_strategy.find_neighbors(group_test_df, data_id)
+                        neighbors = self.neighboring_strategy.find_neighbors(train_group_df, data_id)
                         if len(neighbors) == 0:
                             logger.info(f"No neighbors found for target ID: {data_id}, skipping prediction.")
                             continue
                         
-                        # Create a DataFrame with the neighbors
-                        neighbor_df = group_test_df[group_test_df.index.isin(neighbors)]
-                
-                if not neighbor_df.empty:
-                        model = copy.deepcopy(self.reg_model)
-                        model.fit(neighbor_df)  # Fit the model on the neighbors
-                        group_predictions = model.predict(neighbor_df)
-                        res_df.loc[neighbor_df.index, 'Q_sim'] = group_predictions['Q_sim'].values
+                        # Create a DataFrame with the neighbors from TRAINING data
+                        neighbor_df = train_group_df[train_group_df.index.isin(neighbors)]
+
+                        if not neighbor_df.empty:
+                            model = copy.deepcopy(self.reg_model)
+                            model.fit(neighbor_df)
+                            # Predict only for this specific data point
+                            single_test_df = group_test_df.loc[[data_id]]
+                            group_predictions = model.predict(single_test_df)
+                            res_df.loc[data_id, 'Q_sim'] = group_predictions['Q_sim'].values[0]
                         
         return res_df
 
@@ -751,7 +765,8 @@ class GeneralModel:
             df_loo['Q_sim'] = np.nan
 
             ids = df['ID'].unique()
-            
+
+
             # Use tqdm for a nice progress bar
             for id in tqdm(ids, desc="Leave-one-out validation"):
                 train_df = df[df['ID'] != id]
