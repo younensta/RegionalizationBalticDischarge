@@ -676,7 +676,7 @@ class GeneralModel:
 
             if (rel_error_value > 0 and rel_error_value < 100):
                 # Horizontal line from left to intersection point
-                ax8.axhline(y=percentile, xmin=0, xmax=rel_error_value, color=color, linestyle='--', alpha=0.8)
+                ax8.axhline(y=percentile, xmin=0, xmax=rel_error_value/100, color=color, linestyle='--', alpha=0.8)
                 # Vertical line from bottom to intersection point
                 ax8.axvline(x=rel_error_value, ymin=0, ymax=percentile, color=color, linestyle='--', alpha=0.8)
 
@@ -708,7 +708,7 @@ class GeneralModel:
 
             if  (mape_value > 0 and  mape_value < 100):
                 # Horizontal line from left to intersection point
-                ax9.axhline(y=percentile, xmin=0, xmax=mape_value, color=color, linestyle='--', alpha=0.8)
+                ax9.axhline(y=percentile, xmin=0, xmax=mape_value/100, color=color, linestyle='--', alpha=0.8)
                 # Vertical line from bottom to intersection point
                 ax9.axvline(x=mape_value, ymin=0, ymax=percentile, color=color, linestyle='--', alpha=0.8)
 
