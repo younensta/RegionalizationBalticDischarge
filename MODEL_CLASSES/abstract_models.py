@@ -498,28 +498,28 @@ class GeneralModel:
 
         else:
             ax1.set_title('Actual vs Fitted Q')
-            ax1.scatter(df['Q'], df['Q_sim'], color='blue', label='Predicted vs Actual', alpha=0.5)
+            ax1.scatter(df['Q'], df['Q_sim'], color='red', label='Predicted vs Actual', alpha=0.5)
             ax1.plot([df['Q'].min(), df['Q'].max()], [df['Q'].min(), df['Q'].max()], color='black', linestyle='--')
             
             ax2.set_title('Relative Error')
-            ax2.scatter(df['Q'], (df['Q'] - df['Q_sim']) / df['Q'], color='blue', label='Relative Error', alpha=0.5)
+            ax2.scatter(df['Q'], (df['Q_sim'] - df['Q']) / df['Q'], color='red', label='Relative Error', alpha=0.5)
             ax2.axhline(0, color='black', linestyle='--')
 
             ax3.set_title('Error')
-            ax3.scatter(df['Q'], df['Q_sim'] - df['Q'], color='blue', label='Absolute Error', alpha=0.5)
+            ax3.scatter(df['Q'], df['Q_sim'] - df['Q'], color='red', label='Absolute Error', alpha=0.5)
             ax3.axhline(0, color='black', linestyle='--')
 
-        ax1.set_xlabel('Actual Q')       
-        ax1.set_ylabel('Fitted Q')
+        ax1.set_xlabel('Actual Q (m3/s)')       
+        ax1.set_ylabel('Fitted Q (m3/s)')
         ax1.set_title('Actual vs Fitted Q')
         ax1.set_xscale('log')
         ax1.set_yscale('log')
 
-        ax2.set_xlabel("Actual Q")
-        ax2.set_ylabel("Relative Error")
+        ax2.set_xlabel("Actual Q (m3/s)")
+        ax2.set_ylabel("Relative Error (%)")
         ax2.set_xscale('log')
 
-        ax3.set_xlabel('Actual Q')
+        ax3.set_xlabel('Actual Q (m3/s)')
         ax3.set_ylabel('Error (m3/s)')
         ax3.set_xscale('log')
         ax3.set_yscale('linear')
@@ -571,7 +571,7 @@ class GeneralModel:
         y_values = [np.sum(pbias_values < x) / len_pbias for x in x_values]
 
         ax5.plot(x_values, y_values, color='red', linewidth=2)
-        ax5.set_xlabel('Absolute PBIAS')
+        ax5.set_xlabel('Absolute PBIAS (%)')
         ax5.set_ylabel("% of basins with |PBIAS| < x")
         ax5.set_title('PBIAS per Basin')
 
@@ -675,7 +675,7 @@ class GeneralModel:
         y_values = [np.sum(utilisables_values < x) / len_utilisables for x in x_values]
 
         ax8.plot(x_values, y_values, color='orange', linewidth=2)
-        ax8.set_xlabel('Relative Error')
+        ax8.set_xlabel('Relative Error (%)')
         ax8.set_ylabel("% of basins with Relative Error < x")
         ax8.set_title('Relative Error (by point)')
         interesting = [0.1, 0.25, 0.5, 0.75, 0.9]
@@ -707,7 +707,7 @@ class GeneralModel:
         x_values = np.linspace(0, 100, nb)
         y_values = [np.sum(mape_values < x) / len_mape for x in x_values]
         ax9.plot(x_values, y_values, color='brown', linewidth=2)
-        ax9.set_xlabel('MAPE')
+        ax9.set_xlabel('MAPE (%)')
         ax9.set_ylabel("% of basins with MAPE < x")
         ax9.set_title('MAPE per Basin')
         interesting = [0.1, 0.25, 0.5,  0.75, 0.9]
@@ -765,7 +765,7 @@ class GeneralModel:
         """
         # Silence logger during LOO
         original_level = logging.getLogger().level  # Root logger
-        logging.getLogger().setLevel(logging.ERROR)  # This affects all child loggers
+        logging.getLogger().setLevel(logging.WARNING)  # This affects all child loggers
         
 
 
