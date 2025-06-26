@@ -11,7 +11,7 @@ import indicators as idcts
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
@@ -315,9 +315,13 @@ class GeneralModel:
         # Predict using the models for each group
         for group_path, group_test_df in self.final_test_groups.items():
             logger.info(f"Predicting for group: {group_path}")
+            if group_path not in self.final_groups.keys():
+                logger.warning(f"No training data for group {group_path}. Skipping prediction for this group. Please consider using a different clustering strategy or check your data.")
+                continue
             
             if self.neighboring_strategy is None:
                 if group_path in self.models:
+                    
                     model = self.models[group_path]
                     group_predictions = model.predict(group_test_df)
                     res_df.loc[group_test_df.index, 'Q_sim'] = group_predictions['Q_sim'].values
