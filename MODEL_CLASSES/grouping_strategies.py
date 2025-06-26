@@ -2,6 +2,7 @@ from abstract_models import GroupingStrategy
 import pandas as pd
 from k_means_constrained import KMeansConstrained
 from typing import List
+from sklearn.preprocessing import StandardScaler
 
 class TemporalGrouping(GroupingStrategy):
     """
@@ -58,6 +59,8 @@ class KmeansClustering(GroupingStrategy):
         self.min_members = min_members
         self.n_clusters = n_clusters
         self.random_state = random_state
+        self.scaler = StandardScaler()
+
         
         super().__init__(name=f"Kmeans:{cluster_column}", attributes=cluster_column)
         self.model = KMeansConstrained(n_clusters=self.n_clusters, size_min=self.min_members, random_state=self.random_state)
@@ -66,6 +69,7 @@ class KmeansClustering(GroupingStrategy):
         
         train_df_copy = train_df.copy()
         train_df_for_clustering = train_df_copy[self.cluster_column]
+        train_df_for_clustering = self.scaler.fit_transform(train_df_for_clustering)
 
         # Fit the KMeans model
         self.model.fit(train_df_for_clustering)
@@ -79,6 +83,7 @@ class KmeansClustering(GroupingStrategy):
     def predict_group(self, test_df):
         test_df_copy = test_df.copy()
         test_df_for_clustering = test_df_copy[self.cluster_column]
+        test_df_for_clustering = self.scaler.transform(test_df_for_clustering)
 
         # Predict clusters
         test_df_copy[f'KMEANS_{self.cluster_column}_GROUP'] = self.model.predict(test_df_for_clustering)
