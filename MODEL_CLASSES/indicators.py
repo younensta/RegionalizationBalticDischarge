@@ -2,88 +2,155 @@
 
 import numpy as np
 
-def nse(actual, fitted) -> float:
+class Metric:
     """
-    Calculate the Nash-Sutcliffe Efficiency (NSE) between actual and fitted values.
+    Base class for metrics
     """
-    numerator = np.sum((actual - fitted) ** 2)
-    denominator = np.sum((actual - np.mean(actual)) ** 2)
+    name: str
+    #Plotting window
+    x_min: float
+    x_max: float
+    unit: str
+    anti: bool #If true, the cumulative distribution function is inverted
 
-    if denominator == 0:
-        return np.nan  # Avoid division by zero
+    def __call__(self, actual, fitted):
+        """
+        Calculate the metric value between actual and fitted values.
+        This method should be implemented by subclasses.
+        """
+        raise NotImplementedError("Subclasses should implement this method.")
+    
 
-    return 1 - (numerator / denominator)
+class NSE(Metric):
+    """
+    Nash-Sutcliffe Efficiency (NSE) metric.
+    """
+    name = "NSE"
+    x_min = -1.0
+    x_max = 1.0
+    unit = "unit-less"
+    anti = True  # Higher values are better, so we invert the CDF
+    
+    def __call__(self, actual, fitted):
+        numerator = np.sum((actual - fitted) ** 2)
+        denominator = np.sum((actual - np.mean(actual)) ** 2)
 
-def pbias(actual, fitted) -> float:
-    """
-    Calculate the Percent Bias (PBIAS) between actual and fitted values.
-    """
-    return 100 * np.sum(fitted - actual) / np.sum(actual)
+        if denominator == 0:
+            return np.nan  # Avoid division by zero
 
-def rmse(actual, fitted) -> float:
-    """
-    Calculate the Root Mean Square Error (RMSE) between actual and fitted values.
-    """
-    return np.sqrt(np.mean((actual - fitted) ** 2))
+        return 1 - (numerator / denominator)
 
-def nrmse(actual, fitted) -> float:
+class PBIAS(Metric):
     """
-    Calculate the Normalized Root Mean Square Error (NRMSE) between actual and fitted values.
+    Percent Bias (PBIAS) metric.
+    """
+    name = "PBIAS"
+    x_min = -100.0
+    x_max = 100.0
+    unit = "%"
+    anti = False
+
+    def __call__(self, actual, fitted):
+        return 100 * np.sum(fitted - actual) / np.sum(actual)
+
+class APBIAS(Metric):
+    """
+    Absolute Percent Bias (APBIAS) metric.
+    """
+    name = "APBIAS"
+    x_min = 0.0
+    x_max = 100.0
+    unit = "%"
+    anti = False
+    
+    def __call__(self, actual, fitted):
+        return np.mean(np.abs((fitted - actual) / actual)) * 100 if np.any(actual) else np.nan
+
+class RSME(Metric):
+    """
+    Root Mean Square Error (RMSE) metric.
+    """
+    name = "RMSE"
+    x_min = 0.0
+    x_max = np.inf
+    unit = "(m3/s)"
+    anti = False
+
+    def __call__(self, actual, fitted):
+        return np.sqrt(np.mean((actual - fitted) ** 2))
+
+class NRSME(Metric):
+    """
+    Normalized Root Mean Square Error (NRMSE) metric.
     Normalization is done using the interquartile range (IQR).
     """
-    return rmse(actual, fitted) / (np.percentile(actual, 75) - np.percentile(actual, 25))
+    name = "NRSME"
+    x_min = 0.0
+    x_max = np.inf
+    unit = "(m3/s)"
+    anti = False
 
-def medape(actual, fitted) -> float:
-    """
-    Calculate the Median Absolute Percentage Error (MedAPE) between actual and fitted values.
-    """
-    return np.median(np.abs((actual - fitted) / actual)) * 100
-
-def smape(actual, fitted) -> float:
-    """
-    Calculate the Symmetric Mean Absolute Percentage Error (sMAPE) between actual and fitted values.
-    """
-    return np.mean(np.abs((actual - fitted) / ((np.abs(actual) + np.abs(fitted)) / 2))) * 100
-
-def medsmape(actual, fitted) -> float:
-    """
-    Calculate the Median Symmetric Mean Absolute Percentage Error (MedSMAPE) between actual and fitted values.
-    """
-    return np.median(np.abs((actual - fitted) / ((np.abs(actual) + np.abs(fitted)) / 2))) * 100
+    def __call__(self, actual, fitted):
+        rmse_value = np.sqrt(np.mean((actual - fitted) ** 2))
+        iqr = np.percentile(actual, 75) - np.percentile(actual, 25)
+        return rmse_value / iqr if iqr != 0 else np.nan
 
 
-def flow_deciles_smape(actual, fitted) -> dict:
+class MAPE(Metric):
     """
-    Calculate the sMAPE for each decile of the actual values.
-    Returns a dictionary with decile ranges as keys and sMAPE values for different flow deciles as values.
+    Mean Absolute Percentage Error (MAPE) metric.
     """
-    deciles = np.percentile(actual, np.arange(0, 101, 10))
-    smape_values = {}
+    name = "MAPE"
+    x_min = 0.0
+    x_max = 100.0
+    unit = "%"
+    anti = False
 
-    for i in range(len(deciles) - 1):
-        mask = (actual >= deciles[i]) & (actual < deciles[i + 1])
-        if np.any(mask):
-            smape_values[f"{deciles[i]:.2f} - {deciles[i + 1]:.2f}"] = smape(actual[mask], fitted[mask])
+    def __call__(self, actual, fitted):
+        return np.mean(np.abs((fitted - actual) / actual)) * 100 if np.any(actual) else np.nan
 
-    return smape_values
-
-def flow_deciles_nse(actual, fitted) -> dict:
+class MedAPE(Metric):
     """
-    Calculate the NSE for each decile of the actual values.
-    Returns a dictionary with decile ranges as keys and NSE values for different flow deciles as values.
+    Median Absolute Percentage Error (MedAPE) metric.
     """
-    deciles = np.percentile(actual, np.arange(0, 101, 10))
-    nse_values = {}
+    name = "MedAPE"
+    x_min = 0.0
+    x_max = 100.0
+    unit = "%"
+    anti = False
 
-    for i in range(len(deciles) - 1):
-        mask = (actual >= deciles[i]) & (actual < deciles[i + 1])
-        if np.any(mask):
-            nse_values[f"{deciles[i]:.2f} - {deciles[i + 1]:.2f}"] = nse(actual[mask], fitted[mask])
 
-    return nse_values
+    def __call__(self, actual, fitted):
+        return np.median(np.abs((actual - fitted) / actual)) * 100 if np.any(actual) else np.nan
 
-def mape(actual, fitted) -> float:
+class SMAPE(Metric):
     """
-    Calculate the Mean Absolute Percentage Error (MAPE) between actual and fitted values.
+    Symmetric Mean Absolute Percentage Error (sMAPE) metric.
     """
-    return np.mean(np.abs((fitted - actual) / actual)) * 100
+    name = "SMAPE"
+    x_min = 0.0
+    x_max = 100.0
+    unit = "%"
+    anti = False
+
+    def __call__(self, actual, fitted):
+        denominator = (np.abs(actual) + np.abs(fitted)) / 2
+        return np.mean(np.abs((actual - fitted) / denominator)) * 100 if np.any(denominator) else np.nan
+
+class SMedAPE(Metric):
+    """
+    Symmetric Median Absolute Percentage Error (MedSMAPE) metric.
+    """
+    name = "SMedAPE"
+    x_min = 0.0
+    x_max = 100.
+    unit = "%"
+    anti = False
+
+    def __call__(self, actual, fitted):
+        denominator = (np.abs(actual) + np.abs(fitted)) / 2
+        return np.median(np.abs((actual - fitted) / denominator)) * 100 if np.any(denominator) else np.nan
+
+
+METRICS = [NSE(), PBIAS(), APBIAS(), RSME(), NRSME(), MAPE(), MedAPE(), SMAPE(), SMedAPE()]
+METRICS_names = [m.name for m in METRICS]

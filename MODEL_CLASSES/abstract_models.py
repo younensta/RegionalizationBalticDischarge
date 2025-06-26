@@ -110,18 +110,23 @@ class GeneralModel:
         self.reg_model                          = copy.deepcopy(reg_model)
         self.grouping_strategy                  = copy.deepcopy(grouping_strategy)
         self.neighboring_strategy               = neighboring_strategy
-        self.models: dict                       = {}
+        
         self._is_fitted : bool                  = False
+        
+        self.models: dict                       = {}
         self.all_groups: Optional[dict]         = None
         self.all_test_groups: Optional[dict]    = None
         self.final_groups: Optional[dict] = None
         self.final_test_groups: Optional[dict] = None
 
+        # DataFrames to store results
         self.holdout_df: Optional[pd.DataFrame] = None
+        self.loo_df: Optional[pd.DataFrame] = None
+
+        # Metrics
         self.global_metrics: Optional[dict] = None
         self.basin_metrics: Optional[pd.DataFrame] = None
 
-        self.loo_df: Optional[pd.DataFrame] = None
 
 
         if time_step not in ['MONTH', 'YEAR', 'SEASON']:
@@ -395,15 +400,10 @@ class GeneralModel:
         global_metrics['mean_Q_sim'] = metric_df['Q_sim']
         global_metrics['mean_error'] = metric_df['error'].mean()
         global_metrics['mean_absolute_error'] = metric_df['abs_error'].mean()
-        global_metrics['nse'] = idcts.nse(metric_df['Q'], metric_df['Q_sim'])
-        global_metrics['pbias'] = idcts.pbias(metric_df['Q'], metric_df['Q_sim'])
-        global_metrics['rmse'] = idcts.rmse(metric_df['Q'], metric_df['Q_sim'])
-        global_metrics['nrmse'] = idcts.nrmse(metric_df['Q'], metric_df['Q_sim'])
-        global_metrics['medape'] = idcts.medape(metric_df['Q'], metric_df['Q_sim'])
-        global_metrics['smape'] = idcts.smape(metric_df['Q'], metric_df['Q_sim'])
-        global_metrics['medsmape'] = idcts.medsmape(metric_df['Q'], metric_df['Q_sim'])
-        global_metrics['flow_deciles_nse'] = idcts.flow_deciles_nse(metric_df['Q'], metric_df['Q_sim'])
-        global_metrics['flow_deciles_smape'] = idcts.flow_deciles_smape(metric_df['Q'], metric_df['Q_sim'])
+        
+        for metric in idcts.METRICS:
+            global_metrics[metric.name] = metric(metric_df['Q'], metric_df['Q_sim'])
+
 
         self.global_metrics = global_metrics
 
@@ -422,16 +422,9 @@ class GeneralModel:
             basin_metrics.loc[basin, 'mean_Q_sim'] = basin_df['Q_sim'].mean()
             basin_metrics.loc[basin, 'mean_error'] = basin_df['error'].mean()
             basin_metrics.loc[basin, 'mean_absolute_error'] = basin_df['abs_error'].mean()
-            basin_metrics.loc[basin, 'nse'] = idcts.nse(basin_df['Q'], basin_df['Q_sim'])
-            basin_metrics.loc[basin, 'pbias'] = idcts.pbias(basin_df['Q'], basin_df['Q_sim'])
-            basin_metrics.loc[basin, 'rmse'] = idcts.rmse(basin_df['Q'], basin_df['Q_sim'])
-            basin_metrics.loc[basin, 'nrmse'] = idcts.nrmse(basin_df['Q'], basin_df['Q_sim'])
-            basin_metrics.loc[basin, 'medape'] = idcts.medape(basin_df['Q'], basin_df['Q_sim'])
-            basin_metrics.loc[basin, 'smape'] = idcts.smape(basin_df['Q'], basin_df['Q_sim'])
-            basin_metrics.loc[basin, 'medsmape'] = idcts.medsmape(basin_df['Q'], basin_df['Q_sim'])
-            basin_metrics.at[basin, 'flow_deciles_nse'] = idcts.flow_deciles_nse(basin_df['Q'], basin_df['Q_sim'])
-            basin_metrics.at[basin, 'flow_deciles_smape'] = idcts.flow_deciles_smape(basin_df['Q'], basin_df['Q_sim'])
-            basin_metrics.loc[basin, 'mape'] = idcts.mape(basin_df['Q'], basin_df['Q_sim'])
+            for metric in idcts.METRICS:
+                basin_metrics.loc[basin, metric.name] = metric(basin_df['Q'], basin_df['Q_sim'])
+        
 
         self.basin_metrics = basin_metrics
         logger.info("Basin metrics calculated successfully.")
@@ -526,7 +519,7 @@ class GeneralModel:
 
         
         # NSE plot
-        nse_values = self.basin_metrics['nse'].dropna()
+        nse_values = self.basin_metrics[idcts.NSE.name].dropna()
         len_nse = len(nse_values)
 
         nb = 200
@@ -563,7 +556,7 @@ class GeneralModel:
         ax4.set_ylim(0, 1)
 
         # PBIAS plot
-        pbias_values = np.abs(self.basin_metrics['pbias'].dropna())
+        pbias_values = np.abs(self.basin_metrics[idcts.PBIAS.name].dropna())
         len_pbias = len(pbias_values)
 
         nb = 200
@@ -601,7 +594,7 @@ class GeneralModel:
 
 
         # MedAPE plot
-        mape_values = self.basin_metrics['medape'].dropna()
+        mape_values = self.basin_metrics[idcts.MedAPE.name].dropna()
         len_mape = len(mape_values)
         nb = 200
         x_values = np.linspace(0, 100, nb)
@@ -632,7 +625,7 @@ class GeneralModel:
         ax6.set_ylim(0, 1)
 
         # sMAPE
-        smape_values = self.basin_metrics['smape'].dropna()
+        smape_values = self.basin_metrics[idcts.SMAPE.name].dropna()
         len_smape = len(smape_values)
         nb = 200
         x_values = np.linspace(0, 100, nb)
@@ -701,7 +694,7 @@ class GeneralModel:
         #displaying in percentage
 
         # per basin MAPE plot
-        mape_values = self.basin_metrics['mape'].dropna()
+        mape_values = self.basin_metrics[idcts.MAPE.name].dropna()
         len_mape = len(mape_values)
         nb = 200
         x_values = np.linspace(0, 100, nb)
@@ -754,6 +747,8 @@ class GeneralModel:
         self.fit(train_df)
         #Evaluate the model on the test DataFrame
         self.holdout_df = self.predict(test_df)
+        #Compute metrics for the hold-out results
+        self._compute_metrics(self.holdout_df)
         #Show the results
         if show_results:
             self._show_results(self.holdout_df, grouped=grouped, blocked=True)
@@ -792,6 +787,8 @@ class GeneralModel:
             logger.setLevel(original_level)
         
         self.loo_df = df_loo
+        # Compute metrics for the leave-one-out results
+        self._compute_metrics(self.loo_df)
         # Show the results
         if show_results:
 
