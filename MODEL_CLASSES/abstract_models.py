@@ -78,12 +78,13 @@ class NeighboringStrategy:
     Should be inherited by different strategies.
     Will be eventually used to train the model only on K nearest neighbors of the target station within the groups.
     """
-    def __init__(self, name: str, k: int, basin_wise:bool = False): #If basin is True, the strategy only use basin characteritics and neighbors are the same for all lines from the same station.
+    def __init__(self, name: str, k: int, basin_wise:bool = False, col_to_check=[]): #If basin is True, the strategy only use basin characteritics and neighbors are the same for all lines from the same station.
         self.name = name
         self.k = k  #Number of neighbors to consider
         self.basin_wise = basin_wise
+        self.col_to_check = []
 
-    def find_neighbors(self, group_df: pd.DataFrame, target_id: str):
+    def find_neighbors(self, group_df: pd.DataFrame, target_id: str, test_df):
         """
         Find neighbors for the target station in the training data.
         Should return a list of neighboring station IDs.
@@ -153,6 +154,11 @@ class GeneralModel:
             for attr in gr_str.attributes:
                 if attr not in df.columns:
                     raise ValueError(f"Grouping attribute '{attr}' must be present in the DataFrame.")
+                
+        if not self.neighboring_strategy is None:
+            for col in self.neighboring_strategy.col_to_check:
+                if col not in df.columns:
+                    raise ValueError(f"Neighboring strategy column '{col}' must be present in the DataFrame.")
 
 
         logger.info("Cleaning DataFrame...")
@@ -334,7 +340,7 @@ class GeneralModel:
                 
                 if self.neighboring_strategy.basin_wise:
                     for id in group_test_df.index.get_level_values('ID').unique():
-                        neighbors = self.neighboring_strategy.find_neighbors(train_group_df, id)
+                        neighbors = self.neighboring_strategy.find_neighbors(train_group_df, id, group_test_df)
                         if len(neighbors)==0:
                             logger.info(f"No neighbors found for target ID: {id}, skipping prediction.")
                             continue
@@ -352,7 +358,7 @@ class GeneralModel:
 
                 else:# not basin wise, so we can use multiindex
                     for data_id in group_test_df.index:
-                        neighbors = self.neighboring_strategy.find_neighbors(train_group_df, data_id)
+                        neighbors = self.neighboring_strategy.find_neighbors(train_group_df, data_id, group_test_df)
                         if len(neighbors) == 0:
                             logger.info(f"No neighbors found for target ID: {data_id}, skipping prediction.")
                             continue

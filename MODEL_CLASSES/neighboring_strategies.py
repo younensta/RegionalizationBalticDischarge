@@ -2,12 +2,17 @@ from abstract_models import NeighboringStrategy
 
 import pandas as pd
 import geopandas as gpd
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics.pairwise import euclidean_distances
+
+
 import warnings
-from typing import Optional
+from typing import Optional, List
 
 class SpatialNeighboring(NeighboringStrategy):
     """
     A neighboring strategy that uses spatial data to find neighboring stations.
+    A gdf containing the centroids of the training and prediction basins is required.
     This class inherits from the NeighboringStrategy base class.
     The geodataframe must contain 'ID' and 'geometry' columns.
     The 'ID' column is used to identify the stations, and the 'geometry' column
@@ -56,7 +61,7 @@ class SpatialNeighboring(NeighboringStrategy):
 
         return distance_matrix
     
-    def find_neighbors(self, group_df: pd.DataFrame, test_id: str):
+    def find_neighbors(self, group_df: pd.DataFrame, test_id: str, test_df: pd.DataFrame):
         """
         Get the nearest neighbors for a given test station ID within the training data.
         """
@@ -86,5 +91,31 @@ class SpatialNeighboring(NeighboringStrategy):
 
         return neighbors
     
+class EuclidianNeighbors(NeighboringStrategy):
+    """
+    A neighboring strategy that uses Euclidean distance on standardized prodictors to find neighboring stations.
+    """
+
+    def __init__(self, columns: List[str], n_neighbors: int=30):
+        super().__init__('Euclidian_Neighbors', n_neighbors, basin_wise=False, col_to_check=columns)
+        self.columns = columns
+        self.scaler = StandardScaler()
 
 
+    def find_neighbors(self, group_df:pd.DataFrame, target_id, test_df:pd.DataFrame):
+        # Select the target row as a DataFrame to maintain 2D shape
+        row = test_df.loc[[target_id], self.columns]
+        
+        group_df_features = group_df[self.columns]
+        
+        # Scale the data
+        scaled_group_df = self.scaler.fit_transform(group_df_features)
+        scaled_row = self.scaler.transform(row)
+
+        # Calculate distances using scikit-learn's optimized function
+        dist_array = euclidean_distances(scaled_row, scaled_group_df).flatten()
+
+        distances = pd.Series(dist_array, index=group_df.index)
+        neighbors = distances.nsmallest(self.k).index
+
+        return neighbors
