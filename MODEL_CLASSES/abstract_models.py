@@ -407,11 +407,7 @@ class GeneralModel:
 
         self.global_metrics = global_metrics
 
-        basin_metrics = pd.DataFrame(columns=['ID', 'mean_Q', 'mean_Q_sim', 'mean_error',
-                                              'mean_absolute_error',
-                                              'nse', 'pbias', 'rmse', 'nrmse',
-                                              'medape', 'smape', 'medsmape',
-                                              'flow_deciles_nse', 'flow_deciles_smape'])
+        basin_metrics = pd.DataFrame(columns=['ID'])
 
         self.basin_metrics = basin_metrics.set_index('ID')
 
