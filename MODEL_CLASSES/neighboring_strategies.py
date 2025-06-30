@@ -97,7 +97,7 @@ class EuclidianNeighbors(NeighboringStrategy):
     """
 
     def __init__(self, columns: List[str], n_neighbors: int=30):
-        super().__init__('Euclidian_Neighbors', n_neighbors, basin_wise=False, col_to_check=columns)
+        super().__init__(f'Euclidian_Neighbors:{columns}', n_neighbors, basin_wise=False, col_to_check=columns)
         self.columns = columns
         self.scaler = StandardScaler()
 
