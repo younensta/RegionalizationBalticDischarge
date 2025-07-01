@@ -10,7 +10,10 @@ import indicators as idcts
 import base_models as bm
 import grouping_strategies as gs
 import neighboring_strategies as ns
+import plotting as pl
 
+import plotly.express as px
+import plotly.graph_objects as go
 
 
 
@@ -398,7 +401,7 @@ if st.session_state.step == "COMPUTATION_PAGE":
         if st.button("Run training and validation"):
 
             if st.session_state.how == "Holdout-Validation":
-                with st.spinner("Running training and validation..."):
+                with st.spinner("Running training and validation (this might take a while) ..."):
                     st.session_state.models[0].hold_out_validation(st.session_state.train_df,
                                                         percent=train_percentage,
                                                         random_seed=st.session_state.random_seed,
@@ -411,7 +414,7 @@ if st.session_state.step == "COMPUTATION_PAGE":
                     st.rerun()
 
             elif st.session_state.how == "Leave-One-Out Cross-Validation":
-                with st.spinner("Running training and validation..."):
+                with st.spinner("Running training and validation (this might take a while) ..."):
                     st.session_state.models[0].leave_one_out_validation(
                         st.session_state.train_df,
                         show_results=True,
@@ -425,7 +428,7 @@ if st.session_state.step == "COMPUTATION_PAGE":
     else:
         if st.button("Run training and validation for all models"):
             if st.session_state.how == "Holdout-Validation":
-                with st.spinner("Running training and validation for all models..."):
+                with st.spinner("Running training and validation for all models (this might take a while) ..."):
                     for model in st.session_state.models:
                         model.hold_out_validation(st.session_state.train_df,
                                                   percent=train_percentage,
@@ -436,7 +439,7 @@ if st.session_state.step == "COMPUTATION_PAGE":
                     st.session_state.step = "RESULTS_PAGE"
                     st.rerun()
             elif st.session_state.how == "Leave-One-Out Cross-Validation":
-                with st.spinner("Running training and validation for all models..."):
+                with st.spinner("Running training and validation for all models (this might take a while) ..."):
                     for model in st.session_state.models:
                         model.leave_one_out_validation(
                             st.session_state.train_df,
@@ -460,7 +463,7 @@ if st.session_state.step == "RESULTS_PAGE":
         plt.close()  # Close the figure to free memory
     
     if len(st.session_state.models)==1 and st.session_state.show_coords:
-        st.header("**Data:**")
+        st.header("**By station:**")
         if st.session_state.how == "Holdout-Validation":
             test_ids = st.session_state.models[0].basin_metrics.index
             plot_df = st.session_state.train_df[['ID', 'lon', 'lat']].copy()
@@ -493,37 +496,68 @@ if st.session_state.step == "RESULTS_PAGE":
             # Normalize and clamp
             normalized_values = (df[indic.name] - indic.x_min) / (indic.x_max - indic.x_min)
             normalized_values = np.clip(normalized_values, indic.x_min, indic.x_max)  # Clamp between 0 and 1
-            colors = cmap(normalized_values)
-            df['color'] = ['#%02x%02x%02x' % (int(r*255), int(g*255), int(b*255)) for r, g, b, a in colors]
+            df[f'{indic.name} legend'] = normalized_values
         else:
             # Normalize and clamp values between 0 and 1 (inverted)
             normalized_values = (indic.x_max - df[indic.name]) / (indic.x_max - indic.x_min)
             normalized_values = np.clip(normalized_values, indic.x_min, indic.x_max)  # Clamp between 0 and 1
-            colors = cmap(normalized_values)
-            df['color'] = ['#%02x%02x%02x' % (int(r*255), int(g*255), int(b*255)) for r, g, b, a in colors]
+            df[f'{indic.name} legend'] = normalized_values
     
-        # Display the map with the indicator values
-        st.write(f"**{name} Values by Station**")
-        st.map(df, color='color')
+        fig = px.scatter_mapbox(
+            df, 
+            lat="lat", 
+            lon="lon", 
+            color=f'{indic.name} legend',
+            range_color=[indic.x_min, indic.x_max],
+            color_continuous_scale="RdYlGn_r" if not indic.anti else "RdYlGn",
+
+            hover_data={
+                'ID': False,
+                indic.name: ':.2f',
+                f'{indic.name} legend': False,
+                'lon': False,
+                'lat': False,
+            },
+            hover_name='ID',
+            title=f"{name} Values by Station",
+            mapbox_style="carto-positron",
+            zoom=3
+        )
         
-        if indic.anti:
-            grad =  "#d7191c, #fdae61, #a6d96a, #1a9641"
-        else:
-            grad = "#1a9641, #a6d96a, #fdae61, #d7191c"
+        fig.update_layout(
+            mapbox_style="carto-positron",
+            height=600,
+            margin={"r":0,"t":30,"l":0,"b":0}
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
 
-        st.markdown(f"""
-        <div style="margin: 20px 0;">
-            <p><strong>Legend for {name}:</strong></p>
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <div style="width: 200px; height: 20px; background: linear-gradient(to right, {grad}); border: 1px solid #ccc; border-radius: 3px;"></div>
-            </div>
-            <div style="display: flex; justify-content: space-between; width: 200px; font-size: 10px; color: #666;">
-                <span>{indic.x_min:.2f}</span>
-                <span>{indic.x_max:.2f}</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
 
+        st.header("**More graphs**")
+        quantiles = [0.1, 0.25, 0.5, 0.75, 0.9]  # Default quantiles to highlight
+        select = st.selectbox(
+            "Select Indicator to Plot",
+            options=idcts.METRICS_dict.keys(),
+            key="indicator_plot"
+        )
+        if st.checkbox("Choose quantiles to highlight"):
+            q = st.multiselect(
+                "Select Quantiles",
+                options=[np.round(0.05* i, 2) for i in range(1, 21)],
+                default=[0.1, 0.25, 0.5, 0.75, 0.9]
+            )
+            if st.button("Select Quantiles", key="reset_quantiles"):
+                q.sort()
+                quantiles = q
+
+        indic = idcts.METRICS_dict[select]
+        fig = pl.fig_single_indicator(indic, st.session_state.models[0], color="#e41818", interesting=quantiles)
+
+        st.pyplot(fig)
+
+       
+
+        
     else:
         st.write("**Select Indicators to Compute:**")
         indicators = st.multiselect(
