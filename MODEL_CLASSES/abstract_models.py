@@ -108,7 +108,7 @@ class GeneralModel:
 
 
         self.reg_model                          = copy.deepcopy(reg_model)
-        self.grouping_strategy                  = copy.deepcopy(grouping_strategy)
+        self.grouping_strategy                  = copy.deepcopy(grouping_strategy) if grouping_strategy else []
         self.neighboring_strategy               = neighboring_strategy
         
         self._is_fitted : bool                  = False
