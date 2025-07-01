@@ -565,16 +565,47 @@ if st.session_state.step == "RESULTS_PAGE":
 
         
     else:
-        st.write("**Select Indicators to Compute:**")
-        indicators = st.multiselect(
-            "Indicators",
+        st.write("**Select Indicators to compare:**")
+        indicators_names = st.multiselect(
+            "Select Indicators",
             options=idcts.METRICS_dict.keys(),
-            key="indicators",
+            default=list(idcts.METRICS_dict.keys())  # Default to all indicators
         )
-        if len(indicators) == 0:
-            st.warning("Please select at least one indicator.")
+
+        if len(indicators_names) == 0:
+            st.warning("Please select at least one indicator to compute.")
         else:
-            st.session_state.indicators = indicators
+            if st.button("Plot results"):
+                for names in indicators_names:
+                    indic = idcts.METRICS_dict[names]
+                    fig, ax = plt.subplots(figsize=(10, 6))
+
+                    fig.suptitle(f"{indic.name}", fontsize=16)
+                
+                    ax.set_xlabel(f"{indic.name} value ({indic.unit})")
+                    ax.set_xlim(indic.x_min, indic.x_max)
+                    ax.set_xticks(np.linspace(indic.x_min, indic.x_max, 5))
+                    ax.set_ylim(0, 100)
+                    ax.set_yticks(np.linspace(0, 100, 6))
+                    ax.grid(True, alpha=0.5)
+
+                    colors = plt.get_cmap('cividis', len(st.session_state.models))
+
+                    for i, model in enumerate(st.session_state.models):
+                        pl.add_cumulative_indicator(
+                            indic,
+                            model.basin_metrics,
+                            model.name,
+                            ax=ax,
+                            color =colors(i), 
+                            anti = indic.anti)
+                    
+                    ax.legend(loc='upper left', fontsize=10)
+                    st.pyplot(fig)
+
+
+
+
 
     back = st.button("Back to Computation")
     if back:
