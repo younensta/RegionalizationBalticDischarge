@@ -2,12 +2,17 @@ import streamlit as st
 import pandas as pd
 import geopandas as gpd
 import matplotlib.pyplot as plt
+import numpy as np
+import multiprocessing as mp
 
 import abstract_models as am
 import indicators as idcts
 import base_models as bm
 import grouping_strategies as gs
 import neighboring_strategies as ns
+
+
+
 
 
 st.session_state.mode = "Testing" # Default but can be "Prediction" also
@@ -29,9 +34,16 @@ if "temp_step" not in st.session_state:
     st.session_state.temp_step = None  # Default temporal step
 if "nb_models" not in st.session_state:
     st.session_state.nb_models = 0  # Default number of models
+if "random_seed" not in st.session_state:
+    st.session_state.random_seed = 42  # Default random seed for reproducibility
+if "how" not in st.session_state:
+    st.session_state.how = "Holdout-Validation"  # Default validation method
+
+if "res_fig" not in st.session_state:
+    st.session_state.res_fig = None
 st.set_page_config(page_title="Data Driven Regionalization Models for Surface Discharge")
 st.title("Data Driven Regionalization Models for Surface Discharge")
-   
+
 
 
 with st.sidebar:
@@ -51,8 +63,6 @@ with st.sidebar:
     st.write("---")
     st.write("This app allows you to test and use data-driven regionalization models for surface discharge. You can upload your own data or use the built-in Baltic Sea GRDC dataset.")
 
-
-# DATA_LOAD_PAGE
 if st.session_state.step == "DATA_LOAD_PAGE":
     st.header("Data Load and Preparation")
    
@@ -161,7 +171,6 @@ if st.session_state.step == "DATA_LOAD_PAGE":
     else:
         st.warning("Please ensure all requirments are fulfilled.")
 
-
 if st.session_state.step == "MODEL_SELECTION_PAGE":
     st.header("Model Selection")
     
@@ -195,7 +204,7 @@ if st.session_state.step == "MODEL_SELECTION_PAGE":
         if len(st.session_state.models) < 1:
             st.warning("Please add at least one model.")
         else:
-            st.session_state.step = "INDICATORS_SELECTION_PAGE"
+            st.session_state.step = "COMPUTATION_PAGE"
             st.rerun()
 
 if st.session_state.step == "ADD_MODEL_PAGE":
@@ -353,10 +362,179 @@ if st.session_state.step == "ADD_MODEL_PAGE":
         st.session_state.step = "MODEL_SELECTION_PAGE"
         st.rerun()
         
+if st.session_state.step == "COMPUTATION_PAGE":
+    if st.session_state.show_coords:
+        st.info("Basin coordinates are provided. A map can be displayed.")
+    if len(st.session_state.models) == 1:
+        st.info("One model is selected. Results will be displayed for this model only.")
+    st.session_state.how = st.radio(
+        "Please select the validation method",
+        ("Holdout-Validation", "Leave-One-Out Cross-Validation")
+    )
+    if st.session_state.how == "Holdout-Validation":
+        st.write("Holdout-Validation will be used. Please select the percentage of data to use for training.")
+        train_percentage = st.slider(
+            "Testing Data Percentage",
+            min_value=1, max_value=50, value=10, step=1
+        )
+        if st.checkbox("Change random seed"):
+            st.session_state.random_seed = st.number_input(
+                "Random Seed",
+                min_value=0, max_value=10000, value=42, step=1
+            )
+    elif st.session_state.how == "Leave-One-Out Cross-Validation":
+        st.warning("Leave-One-Out Cross-Validation will be used. This method is computationally expensive and may take a long time to run, especially with multiple models and large datasets.")
+        if st.checkbox("Change random seed"):
+            st.session_state.random_seed = st.number_input(
+                "Random Seed",
+                min_value=0, max_value=10000, value=42, step=1
+            )
+    
+    
+    # Computation
+    if len(st.session_state.models) == 0:
+        st.warning("No models selected. Please go back to the model selection page and add at least one model.")
+    elif len(st.session_state.models) == 1:
+        if st.button("Run training and validation"):
+
+            if st.session_state.how == "Holdout-Validation":
+                with st.spinner("Running training and validation..."):
+                    st.session_state.models[0].hold_out_validation(st.session_state.train_df,
+                                                        percent=train_percentage,
+                                                        random_seed=st.session_state.random_seed,
+                                                        show_results=True,
+                                                        grouped=True)
+                    st.session_state.res_fig = plt.gcf()
+                    st.success("Training and validation completed!")
+                    
+                    st.session_state.step = "RESULTS_PAGE"
+                    st.rerun()
+
+            elif st.session_state.how == "Leave-One-Out Cross-Validation":
+                with st.spinner("Running training and validation..."):
+                    st.session_state.models[0].leave_one_out_validation(
+                        st.session_state.train_df,
+                        show_results=True,
+                        grouped=True
+                    )
+                    st.success("Training and validation completed!")
+                    st.session.res_fig = plt.gcf()
+
+                    st.session_state.step = "RESULTS_PAGE"
+                    st.rerun()
+    else:
+        if st.button("Run training and validation for all models"):
+            if st.session_state.how == "Holdout-Validation":
+                with st.spinner("Running training and validation for all models..."):
+                    for model in st.session_state.models:
+                        model.hold_out_validation(st.session_state.train_df,
+                                                  percent=train_percentage,
+                                                  random_seed=st.session_state.random_seed,
+                                                  show_results=False,
+                                                  grouped=False)
+                    st.success("Training and validation completed!")
+                    st.session_state.step = "RESULTS_PAGE"
+                    st.rerun()
+            elif st.session_state.how == "Leave-One-Out Cross-Validation":
+                with st.spinner("Running training and validation for all models..."):
+                    for model in st.session_state.models:
+                        model.leave_one_out_validation(
+                            st.session_state.train_df,
+                            show_results=False,
+                            grouped=False
+                        )
+                    st.success("Training and validation completed!")
+                    st.session_state.step = "RESULTS_PAGE"
+                    st.rerun()
+
+    back = st.button("Back to Model Selection")
+    if back:
+        st.session_state.step = "MODEL_SELECTION_PAGE"
+        st.rerun()
+
+if st.session_state.step == "RESULTS_PAGE":
+
+    st.header("**Global Results:**")
+    if st.session_state.res_fig is not None:  # Check if there is a result figure
+        st.pyplot(st.session_state.res_fig)  # Get current figure and display it
+        plt.close()  # Close the figure to free memory
+    
+    if len(st.session_state.models)==1 and st.session_state.show_coords:
+        st.header("**Data:**")
+        if st.session_state.how == "Holdout-Validation":
+            test_ids = st.session_state.models[0].basin_metrics.index
+            plot_df = st.session_state.train_df[['ID', 'lon', 'lat']].copy()
+            plot_df['color'] = "#DE686699"  # Color for training data
+            plot_df.loc[plot_df['ID'].isin(test_ids), 'color'] = "#6DF1597F"  # Color for testing data
+
+            st.write("**Repartition of Training and Testing Data**")
+            st.map(plot_df, color='color')
+            st.markdown("""
+            <span style="color:#6DF159; font-size: 20px;">●</span> Testing Station &nbsp;&nbsp;&nbsp;
+            <span style="color:#DE6866; font-size: 20px;">●</span> Training Station
+            """, unsafe_allow_html=True)
+        
+        name = st.selectbox(
+            "Select Indicator to Plot",
+            options=idcts.METRICS_dict.keys(),
+            key="indicator_map"
+        )
+        
+        indic = idcts.METRICS_dict[name]
+        df = st.session_state.models[0].basin_metrics[[indic.name]].copy()
+        df['ID'] = df.index
+        
+        coords = st.session_state.train_df[['ID', 'lon', 'lat']].drop_duplicates(subset='ID').copy()
+        df = df.merge(coords, on='ID', how='left')
 
 
+        cmap = plt.get_cmap('RdYlGn')
+        if indic.anti:
+            # Normalize and clamp
+            normalized_values = (df[indic.name] - indic.x_min) / (indic.x_max - indic.x_min)
+            normalized_values = np.clip(normalized_values, indic.x_min, indic.x_max)  # Clamp between 0 and 1
+            colors = cmap(normalized_values)
+            df['color'] = ['#%02x%02x%02x' % (int(r*255), int(g*255), int(b*255)) for r, g, b, a in colors]
+        else:
+            # Normalize and clamp values between 0 and 1 (inverted)
+            normalized_values = (indic.x_max - df[indic.name]) / (indic.x_max - indic.x_min)
+            normalized_values = np.clip(normalized_values, indic.x_min, indic.x_max)  # Clamp between 0 and 1
+            colors = cmap(normalized_values)
+            df['color'] = ['#%02x%02x%02x' % (int(r*255), int(g*255), int(b*255)) for r, g, b, a in colors]
+    
+        # Display the map with the indicator values
+        st.write(f"**{name} Values by Station**")
+        st.map(df, color='color')
+        
+        if indic.anti:
+            grad =  "#d7191c, #fdae61, #a6d96a, #1a9641"
+        else:
+            grad = "#1a9641, #a6d96a, #fdae61, #d7191c"
 
-if st.session_state.step == "INDICATORS_SELECTION_PAGE":
-    pass
+        st.markdown(f"""
+        <div style="margin: 20px 0;">
+            <p><strong>Legend for {name}:</strong></p>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="width: 200px; height: 20px; background: linear-gradient(to right, {grad}); border: 1px solid #ccc; border-radius: 3px;"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; width: 200px; font-size: 10px; color: #666;">
+                <span>{indic.x_min:.2f}</span>
+                <span>{indic.x_max:.2f}</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    else:
+        st.write("**Select Indicators to Compute:**")
+        indicators = st.multiselect(
+            "Indicators",
+            options=idcts.get_all_indicators(),
+            default=idcts.get_default_indicators()
+        )
+        if len(indicators) == 0:
+            st.warning("Please select at least one indicator.")
+        else:
+            st.session_state.indicators = indicators
+
 
 
