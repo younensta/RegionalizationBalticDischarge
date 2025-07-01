@@ -45,7 +45,6 @@ if "how" not in st.session_state:
 if "res_fig" not in st.session_state:
     st.session_state.res_fig = None
 st.set_page_config(page_title="Data Driven Regionalization Models for Surface Discharge")
-st.title("Data Driven Regionalization Models for Surface Discharge")
 
 
 
@@ -67,7 +66,9 @@ with st.sidebar:
     st.write("This app allows you to test and use data-driven regionalization models for surface discharge. You can upload your own data or use the built-in Baltic Sea GRDC dataset.")
 
 if st.session_state.step == "DATA_LOAD_PAGE":
-    st.header("Data Load and Preparation")
+    st.title("**Data Driven Regionalization Models for Surface Discharge**")
+
+    st.title("Data Load and Preparation")
    
     data_source = st.radio(
             "Select Data Source",
@@ -175,12 +176,12 @@ if st.session_state.step == "DATA_LOAD_PAGE":
         st.warning("Please ensure all requirments are fulfilled.")
 
 if st.session_state.step == "MODEL_SELECTION_PAGE":
-    st.header("Model Selection")
+    st.title("Model Selection")
     
     if len(st.session_state.models) == 0:
         st.info("No models added yet. Please add models to proceed.")
     for i, model in enumerate(st.session_state.models):
-        col1, col2 = st.columns([0.9, 0.1])
+        col1, col2 = st.columns([0.8, 0.2])
         with col1:
             st.write(f"Model: {model.name}")
         with col2:
@@ -211,7 +212,7 @@ if st.session_state.step == "MODEL_SELECTION_PAGE":
             st.rerun()
 
 if st.session_state.step == "ADD_MODEL_PAGE":
-    st.header("Model Selection")
+    st.title("Model Selection")
 
     st.write("**Select the predictors to use for the model:**")
     pred = [col for col in st.session_state.train_df.columns if col not in ['ID', 'Q', 'A', 'YEAR', 'MONTH', 'SEASON', 'lat', 'lon']]
@@ -366,6 +367,7 @@ if st.session_state.step == "ADD_MODEL_PAGE":
         st.rerun()
         
 if st.session_state.step == "COMPUTATION_PAGE":
+    st.title("Computation Page")
     if st.session_state.show_coords:
         st.info("Basin coordinates are provided. A map can be displayed.")
     if len(st.session_state.models) == 1:
@@ -456,84 +458,88 @@ if st.session_state.step == "COMPUTATION_PAGE":
         st.rerun()
 
 if st.session_state.step == "RESULTS_PAGE":
-
-    st.header("**Global Results:**")
-    if st.session_state.res_fig is not None:  # Check if there is a result figure
-        st.pyplot(st.session_state.res_fig)  # Get current figure and display it
-        plt.close()  # Close the figure to free memory
+    st.title("Results Page")
     
-    if len(st.session_state.models)==1 and st.session_state.show_coords:
-        st.header("**By station:**")
-        if st.session_state.how == "Holdout-Validation":
-            test_ids = st.session_state.models[0].basin_metrics.index
-            plot_df = st.session_state.train_df[['ID', 'lon', 'lat']].copy()
-            plot_df['color'] = "#DE686699"  # Color for training data
-            plot_df.loc[plot_df['ID'].isin(test_ids), 'color'] = "#6DF1597F"  # Color for testing data
-
-            st.write("**Repartition of Training and Testing Data**")
-            st.map(plot_df, color='color')
-            st.markdown("""
-            <span style="color:#6DF159; font-size: 20px;">●</span> Testing Station &nbsp;&nbsp;&nbsp;
-            <span style="color:#DE6866; font-size: 20px;">●</span> Training Station
-            """, unsafe_allow_html=True)
+    
+    if len(st.session_state.models)==1:
+        st.header("**Global Results:**")
+        if st.session_state.res_fig is not None:  # Check if there is a result figure
+            st.pyplot(st.session_state.res_fig)  # Get current figure and display it
+            plt.close()  # Close the figure to free memory
         
-        name = st.selectbox(
-            "Select Indicator to Plot",
-            options=idcts.METRICS_dict.keys(),
-            key="indicator_map"
-        )
-        
-        indic = idcts.METRICS_dict[name]
-        df = st.session_state.models[0].basin_metrics[[indic.name]].copy()
-        df['ID'] = df.index
-        
-        coords = st.session_state.train_df[['ID', 'lon', 'lat']].drop_duplicates(subset='ID').copy()
-        df = df.merge(coords, on='ID', how='left')
+        st.header("**Specific figures**")
+        if st.session_state.show_coords:
+            if st.session_state.how == "Holdout-Validation":
+                test_ids = st.session_state.models[0].basin_metrics.index
+                plot_df = st.session_state.train_df[['ID', 'lon', 'lat']].copy()
+                plot_df['color'] = "#DE686699"  # Color for training data
+                plot_df.loc[plot_df['ID'].isin(test_ids), 'color'] = "#6DF1597F"  # Color for testing data
 
-
-        cmap = plt.get_cmap('RdYlGn')
-        if indic.anti:
-            # Normalize and clamp
-            normalized_values = (df[indic.name] - indic.x_min) / (indic.x_max - indic.x_min)
-            normalized_values = np.clip(normalized_values, indic.x_min, indic.x_max)  # Clamp between 0 and 1
-            df[f'{indic.name} legend'] = normalized_values
+                st.write("**Repartition of Training and Testing Data**")
+                st.map(plot_df, color='color')
+                st.markdown("""
+                <span style="color:#6DF159; font-size: 20px;">●</span> Testing Station &nbsp;&nbsp;&nbsp;
+                <span style="color:#DE6866; font-size: 20px;">●</span> Training Station
+                """, unsafe_allow_html=True)
+        
+            name = st.selectbox(
+                "Select Indicator to Plot",
+                options=idcts.METRICS_dict.keys(),
+                key="indicator_map"
+            )
+            
+            indic = idcts.METRICS_dict[name]
+            df = st.session_state.models[0].basin_metrics[[indic.name]].copy()
+            df['ID'] = df.index
+            
+            coords = st.session_state.train_df[['ID', 'lon', 'lat']].drop_duplicates(subset='ID').copy()
+            df = df.merge(coords, on='ID', how='left')
         else:
-            # Normalize and clamp values between 0 and 1 (inverted)
-            normalized_values = (indic.x_max - df[indic.name]) / (indic.x_max - indic.x_min)
-            normalized_values = np.clip(normalized_values, indic.x_min, indic.x_max)  # Clamp between 0 and 1
-            df[f'{indic.name} legend'] = normalized_values
-    
-        fig = px.scatter_mapbox(
-            df, 
-            lat="lat", 
-            lon="lon", 
-            color=f'{indic.name} legend',
-            range_color=[indic.x_min, indic.x_max],
-            color_continuous_scale="RdYlGn_r" if not indic.anti else "RdYlGn",
+            st.warning("Basin coordinates are not provided. Map cannot be displayed.")
 
-            hover_data={
-                'ID': False,
-                indic.name: ':.2f',
-                f'{indic.name} legend': False,
-                'lon': False,
-                'lat': False,
-            },
-            hover_name='ID',
-            title=f"{name} Values by Station",
-            mapbox_style="carto-positron",
-            zoom=3
-        )
+        if st.session_state.show_coords:
+            cmap = plt.get_cmap('RdYlGn')
+            if indic.anti:
+                # Normalize and clamp
+                normalized_values = (df[indic.name] - indic.x_min) / (indic.x_max - indic.x_min)
+                normalized_values = np.clip(normalized_values, indic.x_min, indic.x_max)  # Clamp between 0 and 1
+                df[f'{indic.name} legend'] = normalized_values
+            else:
+                # Normalize and clamp values between 0 and 1 (inverted)
+                normalized_values = (indic.x_max - df[indic.name]) / (indic.x_max - indic.x_min)
+                normalized_values = np.clip(normalized_values, indic.x_min, indic.x_max)  # Clamp between 0 and 1
+                df[f'{indic.name} legend'] = normalized_values
         
-        fig.update_layout(
-            mapbox_style="carto-positron",
-            height=600,
-            margin={"r":0,"t":30,"l":0,"b":0}
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
+            fig = px.scatter_mapbox(
+                df, 
+                lat="lat", 
+                lon="lon", 
+                color=f'{indic.name} legend',
+                range_color=[indic.x_min, indic.x_max],
+                color_continuous_scale="RdYlGn_r" if not indic.anti else "RdYlGn",
+
+                hover_data={
+                    'ID': False,
+                    indic.name: ':.2f',
+                    f'{indic.name} legend': False,
+                    'lon': False,
+                    'lat': False,
+                },
+                hover_name='ID',
+                title=f"{name} Values by Station",
+                mapbox_style="carto-positron",
+                zoom=3
+            )
+            
+            fig.update_layout(
+                mapbox_style="carto-positron",
+                height=600,
+                margin={"r":0,"t":30,"l":0,"b":0}
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
 
 
-        st.header("**More graphs**")
         quantiles = [0.1, 0.25, 0.5, 0.75, 0.9]  # Default quantiles to highlight
         select = st.selectbox(
             "Select Indicator to Plot",
@@ -562,13 +568,16 @@ if st.session_state.step == "RESULTS_PAGE":
         st.write("**Select Indicators to Compute:**")
         indicators = st.multiselect(
             "Indicators",
-            options=idcts.get_all_indicators(),
-            default=idcts.get_default_indicators()
+            options=idcts.METRICS_dict.keys(),
+            key="indicators",
         )
         if len(indicators) == 0:
             st.warning("Please select at least one indicator.")
         else:
             st.session_state.indicators = indicators
 
-
+    back = st.button("Back to Computation")
+    if back:
+        st.session_state.step = "COMPUTATION_PAGE"
+        st.rerun()
 
