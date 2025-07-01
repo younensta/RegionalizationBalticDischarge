@@ -9,10 +9,9 @@ import pandas as pd
 
 from typing import List
 
-import statsmodels.api as sm
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor
-
+from sklearn.linear_model import LinearRegression
 
 
 class OlsLogMLR(BaseModel):
@@ -40,10 +39,9 @@ class OlsLogMLR(BaseModel):
         # Add a constant for the intercept
         X = df_train[self.predictors]
         X = StandardScaler().fit_transform(X)  # Normalize the predictors
-        X = sm.add_constant(X, has_constant='add')
 
         # Fit the model using OLS
-        self.model = sm.OLS(y, X).fit()
+        self.model = LinearRegression(y, X).fit()
         self._is_fitted = True
 
         logger.info("Model fitted successfully.")
@@ -64,7 +62,6 @@ class OlsLogMLR(BaseModel):
         
         X_test = df_test[self.predictors]
         X_test = StandardScaler().fit_transform(X_test)
-        X_test = sm.add_constant(X_test, has_constant='add')
 
         # Make predictions
         predictions = self.model.predict(X_test)
