@@ -41,12 +41,11 @@ class OlsLogMLR(BaseModel):
         X = StandardScaler().fit_transform(X)  # Normalize the predictors
 
         # Fit the model using OLS
-        self.model = LinearRegression(y, X).fit()
+        self.model = LinearRegression()
+        self.model.fit(X, y)
         self._is_fitted = True
 
         logger.info("Model fitted successfully.")
-        logger.info(self.model.summary())
-
 
     def predict(self, df_test):
         """
