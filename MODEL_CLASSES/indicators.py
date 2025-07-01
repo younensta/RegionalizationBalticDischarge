@@ -154,3 +154,5 @@ class SMedAPE(Metric):
 
 METRICS = [NSE(), PBIAS(), APBIAS(), RSME(), NRSME(), MAPE(), MedAPE(), SMAPE(), SMedAPE()]
 METRICS_names = [m.name for m in METRICS]
+
+METRICS_dict = {m.name: m for m in METRICS}
