@@ -97,4 +97,56 @@ def plot_models_results(indicators: List[Type[idcts.Metric]], models: List[Gener
     plt.show()
 
 
+def fig_single_indicator(indicator: Type[idcts.Metric], model: GeneralModel,
+                        color: str = "#ee8133", interesting = [0.1, 0.25, 0.5, 0.75, 0.9]) -> plt.Figure:
+    """
+    Plot the cumulative distribution function of a single indicator for a given model.
+    """
 
+    fig, ax = plt.subplots(figsize=(10, 5))
+    fig.suptitle(f"{indicator.name} - {model.name}", fontsize=16)
+ 
+    ax.set_xlabel(f"{indicator.name} value ({indicator.unit})")
+    ax.set_xlim(indicator.x_min, indicator.x_max)
+    ax.set_xticks(np.linspace(indicator.x_min, indicator.x_max, 5))
+    ax.set_ylim(0, 100)
+    ax.set_yticks(np.linspace(0, 100, 6))
+    ax.grid(True, alpha=0.5)
+    
+    if model.basin_metrics is None:
+        raise ValueError(f"Model {model.name} has no basin metrics. Please run validation first.")
+
+    values = model.basin_metrics[indicator.name].dropna()
+    len_values = len(values)
+    nb = 200
+    x_values = np.linspace(indicator.x_min, indicator.x_max, nb)
+
+    if indicator.anti:
+        y_values = np.array([100*np.sum(values >= x) for x in x_values]) / len_values
+    else:
+        y_values= np.array([100*np.sum(values <= x) for x in x_values]) / len_values
+
+    ax.plot(x_values, y_values, label=model.name, color=color)
+
+    colors = plt.cm.get_cmap('winter', len(interesting))
+    for j, percentile in enumerate(interesting):
+        val = np.quantile(values, percentile)
+        color2 = colors(j)
+
+        if  (val > indicator.x_min and  val < indicator.x_max):
+            if indicator.anti:
+                percentile = 1 - percentile  # Invert the percentile for anti metrics
+            # Horizontal line from left to intersection point
+            ax.axhline(y=100*percentile, xmin=0, xmax=(val - indicator.x_min) / (indicator.x_max - indicator.x_min),
+                        color=color2, linestyle='--', alpha=0.8)
+            
+            # Vertical line from bottom to intersection point
+            ax.axvline(x=val, ymin=0, ymax=percentile, color=color2, linestyle='--', alpha=0.8)
+
+            # Add text label at the intersection point
+            ax.text(val, 100*percentile, f"{percentile*100:.0f}%:{val:.2f}:", 
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor='none'),
+                    color='black', fontsize=8, ha='left', va='bottom')
+    
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    return fig 
