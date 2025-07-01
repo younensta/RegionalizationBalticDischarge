@@ -565,6 +565,8 @@ if st.session_state.step == "RESULTS_PAGE":
 
         
     else:
+        st.info("Multiple models are selected. You can compare here their perfomances." \
+        "Please select only one model to analyze its performance in detail.")
         st.write("**Select Indicators to compare:**")
         indicators_names = st.multiselect(
             "Select Indicators",

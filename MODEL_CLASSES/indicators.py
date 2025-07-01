@@ -72,8 +72,8 @@ class RSME(Metric):
     """
     name = "RMSE"
     x_min = 0.0
-    x_max = np.inf
-    unit = "(m3/s)"
+    x_max = 10
+    unit = "m3/s"
     anti = False
 
     def __call__(self, actual, fitted):
@@ -86,8 +86,8 @@ class NRSME(Metric):
     """
     name = "NRSME"
     x_min = 0.0
-    x_max = np.inf
-    unit = "(m3/s)"
+    x_max = 1
+    unit = "unit-less"
     anti = False
 
     def __call__(self, actual, fitted):
