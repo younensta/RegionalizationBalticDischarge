@@ -145,13 +145,13 @@ if st.session_state.mode == "Testing":
 
         else:
             if temporal_step == 'Yearly':
-                train_df = pd.read_csv('../DATA/DF/df_grdc.csv')
+                train_df = pd.read_csv('DATA/DF/df_grdc.csv')
                 st.session_state.temp_step = 'YEAR'
             elif temporal_step == 'Monthly':
-                train_df = pd.read_csv('../DATA/DF/df_grdc_month.csv')
+                train_df = pd.read_csv('DATA/DF/df_grdc_month.csv')
                 st.session_state.temp_step = 'MONTH'
             elif temporal_step == 'Seasonal':
-                train_df = pd.read_csv('../DATA/DF/df_grdc_season.csv')
+                train_df = pd.read_csv('DATA/DF/df_grdc_season.csv')
                 st.session_state.temp_step = 'SEASON'
             st.session_state.show_coords = True  # Default to True for built-in dataset
             
