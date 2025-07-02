@@ -37,7 +37,7 @@ class BaseModel:
         """
         raise NotImplementedError("Subclasses should implement this method.")
 
-    def predict(self, test_df: pd.DataFrame):
+    def predict(self, test_df: pd.DataFrame, prediction_set: bool):
         """
         Predict using the model.
         This method should be implemented by subclasses.
@@ -141,16 +141,20 @@ class GeneralModel:
             self.data_index = ['ID', 'YEAR', 'SEASON']
 
 
-    def _clean(self, df: pd.DataFrame):
+    def _clean(self, df: pd.DataFrame, prediction_set: bool = False):
         """
         Clean the DataFrame by removing rows with NaN and 0 for 'Q' values in the target variable.
         This method is called every time a dataframe is passed to the model, before fitting or predicting.
         It ensures that the DataFrame is clean and ready for modeling.
+        Prediction set is used to indicate if the DataFrame is for prediction or training. It does not chech for 'Q' values if it is a prediction set.
         """
         
         
-        if 'A' not in df.columns or 'Q' not in df.columns:
-            raise ValueError("Target variables 'A' and 'Q' must be present in the DataFrame.")
+        if 'A' not in df.columns:
+            raise ValueError("Variables 'A' and must be present in the DataFrame.")
+        
+        if prediction_set==False and 'Q' not in df.columns:
+            raise ValueError("Variable 'Q' must be present in the DataFrame.")
         
         for p in self.reg_model.predictors:
             if p not in df.columns:
@@ -167,7 +171,10 @@ class GeneralModel:
 
 
         logger.info("Cleaning DataFrame...")
-        rm_df = df[df.isna().any(axis=1) | (df['A'] == 0) | (df['Q'] == 0)]
+        if prediction_set:
+            rm_df = df[df.isna().any(axis=1) | (df['A'] == 0)]
+        else:
+            rm_df = df[df.isna().any(axis=1) | (df['A'] == 0) | (df['Q'] == 0)]
         logger.info(f"Removing {len(rm_df)} rows...")
         
         if len(rm_df) > 0:
@@ -299,7 +306,7 @@ class GeneralModel:
         
         return all_test_groups
 
-    def predict(self, test_df: pd.DataFrame):
+    def predict(self, test_df: pd.DataFrame, prediction_set: bool = False):
         """
         Predict using the model.
         This method will apply the grouping strategy to the test DataFrame and then use the fitted models to make predictions.
@@ -310,7 +317,7 @@ class GeneralModel:
         if not self._is_fitted:
             raise RuntimeError("Model must be fitted before prediction.")
 
-        test_df = self._clean(test_df)
+        test_df = self._clean(test_df, prediction_set=prediction_set)
         
         # Apply grouping strategy to the test DataFrame
         logger.info("Applying grouping strategy to the test DataFrame...")
@@ -319,7 +326,10 @@ class GeneralModel:
         self.final_test_groups = self._get_final_groups_only(self.all_test_groups)
 
         # Prepare results DataFrame
-        res_df = test_df.reset_index()[self.data_index + ['Q']].copy()  # Reset index first
+        if prediction_set:
+            res_df = test_df.reset_index()[self.data_index].copy()  # Reset index first
+        else:
+            res_df = test_df.reset_index()[self.data_index + ['Q']].copy()
         res_df = res_df.set_index(self.data_index)  # Set it back as index
         res_df['Q_sim'] = np.nan
 
@@ -334,7 +344,7 @@ class GeneralModel:
                 if group_path in self.models:
                     
                     model = self.models[group_path]
-                    group_predictions = model.predict(group_test_df)
+                    group_predictions = model.predict(group_test_df, prediction_set=prediction_set)
                     res_df.loc[group_test_df.index, 'Q_sim'] = group_predictions['Q_sim'].values
                 else:
                     logger.info(f"No model found for group: {group_path}, skipping prediction.")
@@ -358,7 +368,7 @@ class GeneralModel:
                             model.fit(neighbor_df)
                             # Predict only for this specific test ID
                             test_id_df = group_test_df[group_test_df.index.get_level_values('ID') == id]
-                            group_predictions = model.predict(test_id_df)
+                            group_predictions = model.predict(test_id_df, prediction_set=prediction_set)
                             res_df.loc[test_id_df.index, 'Q_sim'] = group_predictions['Q_sim'].values
 
                 else:# not basin wise, so we can use multiindex
@@ -376,7 +386,7 @@ class GeneralModel:
                             model.fit(neighbor_df)
                             # Predict only for this specific data point
                             single_test_df = group_test_df.loc[[data_id]]
-                            group_predictions = model.predict(single_test_df)
+                            group_predictions = model.predict(single_test_df, prediction_set=prediction_set)
                             res_df.loc[data_id, 'Q_sim'] = group_predictions['Q_sim'].values[0]
                         
         return res_df

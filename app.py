@@ -40,10 +40,13 @@ if "random_seed" not in st.session_state:
     st.session_state.random_seed = 42  # Default random seed for reproducibility
 if "how" not in st.session_state:
     st.session_state.how = "Holdout-Validation"  # Default validation method
+if "res_df" not in st.session_state:
+    st.session_state.res_df = None  # Default result dataframe
 
 if "res_fig" not in st.session_state:
     st.session_state.res_fig = None
 st.set_page_config(page_title="Data Driven Regionalization Models for Surface Discharge")
+
 
 
 def check_ask_for_column(train_df, default_value):
@@ -1029,5 +1032,22 @@ elif st.session_state.mode == "Prediction":
             st.rerun()
     
     if st.session_state.step == "COMPUTATION_PAGE":
-        pass
+        st.title("Computation Page")
         
+        st.write("**Selected Model:**")
+        st.write(st.session_state.models[0].name)
+
+        if st.button("Train model and predict discharge"):
+            with st.spinner("Running training and prediction (this might take a while) ..."):
+                if st.button("Abort"):
+                    st.rerun()
+                
+                st.session_state.models[0].fit(st.session_state.train_df)
+                st.success("Training completed! Now predicting discharge...")
+                st.session_state.res_df = st.session_state.models[0].predict(st.session_state.pred_df, prediction_set = True)
+
+
+                st.session_state.step = "RESULTS_PAGE"
+                st.rerun()
+    if st.session_state.step == "RESULTS_PAGE":
+        st.write("hello")
