@@ -649,6 +649,13 @@ if st.session_state.mode == "Testing":
                         ax.set_xticks(np.linspace(indic.x_min, indic.x_max, 5))
                         ax.set_ylim(0, 100)
                         ax.set_yticks(np.linspace(0, 100, 6))
+                        if indic.anti:
+                            ax.set_title(f"Inverted Cumulative Distribution Function for {indic.name}")
+                            ax.set_ylabel(f"% of basins with {indic.name} >= x")
+                        else:
+                            ax.set_title(f"Cumulative Distribution Function for {indic.name}")
+                            ax.set_ylabel(f"% of basins with {indic.name} <= x")
+
                         ax.grid(True, alpha=0.5)
 
                         colors = plt.get_cmap('cividis', len(st.session_state.models))

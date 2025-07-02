@@ -111,6 +111,13 @@ def fig_single_indicator(indicator: Type[idcts.Metric], model: GeneralModel,
     ax.set_xticks(np.linspace(indicator.x_min, indicator.x_max, 5))
     ax.set_ylim(0, 100)
     ax.set_yticks(np.linspace(0, 100, 6))
+    if indicator.anti:
+        ax.set_title(f"Inverted Cumulative Distribution Function for {indicator.name}")
+        ax.set_ylabel(f"% of basins with {indicator.name} >= x")
+    else:
+        ax.set_title(f"Cumulative Distribution Function for {indicator.name}")
+        ax.set_ylabel(f"% of basins with {indicator.name} <= x")
+
     ax.grid(True, alpha=0.5)
     
     if model.basin_metrics is None:
