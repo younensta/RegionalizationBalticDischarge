@@ -363,15 +363,21 @@ if st.session_state.mode == "Testing":
 
         if len(st.session_state.grouping_strategies) == 0:
             st.session_state.grouping_strategies = None
-
-
-        if st.button("Add this model"):
-            model = am.GeneralModel(
+        model = am.GeneralModel(
                 time_step=st.session_state.temp_step,
                 reg_model=reg,
                 grouping_strategy=st.session_state.grouping_strategies,
                 neighboring_strategy=st.session_state.neighboring_strategy
             )
+
+        if st.checkbox("Set a personalized name for this model"):
+            name = st.text_input("Model Name", value=model.name)
+            if name:
+                model.name = name
+
+        if st.button("Add this model"):
+            
+
             st.session_state.models.append(model)
             st.session_state.step = "MODEL_SELECTION_PAGE"
             st.rerun()
@@ -1073,15 +1079,22 @@ elif st.session_state.mode == "Prediction":
 
         if len(st.session_state.grouping_strategies) == 0:
             st.session_state.grouping_strategies = None
-
-
-        if st.button("Add this model"):
-            model = am.GeneralModel(
+    
+        model = am.GeneralModel(
                 time_step=st.session_state.temp_step,
                 reg_model=reg,
                 grouping_strategy=st.session_state.grouping_strategies,
                 neighboring_strategy=st.session_state.neighboring_strategy
             )
+
+        if st.checkbox("Set a personalized name for this model"):
+            name = st.text_input("Model Name", value=model.name)
+            if name:
+                model.name = name
+
+        if st.button("Add this model"):
+            
+
             st.session_state.models.append(model)
             st.session_state.step = "MODEL_SELECTION_PAGE"
             st.rerun()
