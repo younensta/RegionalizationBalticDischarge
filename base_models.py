@@ -47,7 +47,7 @@ class OlsLogMLR(BaseModel):
 
         logger.info("Model fitted successfully.")
 
-    def predict(self, df_test):
+    def predict(self, df_test, prediction_set: bool = False):
         """
         Predict using the model.
         """
@@ -67,7 +67,13 @@ class OlsLogMLR(BaseModel):
         # Inverse log transformation to get the original scale
         predictions = np.exp(predictions) * df_test['A']
         
-        res_df = df_test[['Q']].copy()
+
+        res_df = pd.DataFrame(index=df_test.index)  # Create an empty DataFrame with the same index as df_test
+
+        if not prediction_set:
+            # we want to keep the original discharge values if this is a testing
+            res_df = df_test[['Q']].copy()
+        
         res_df.loc[:, 'Q_sim'] = predictions
 
         return res_df
@@ -103,7 +109,7 @@ class LogRF(BaseModel):
 
         logger.info("Random Forest model fitted successfully.")
 
-    def predict(self, df_test: pd.DataFrame):
+    def predict(self, df_test: pd.DataFrame, prediction_set: bool = False):
         """
         Predict using the model.
         """
@@ -119,7 +125,10 @@ class LogRF(BaseModel):
         # Make predictions
         predictions = np.exp(self.model.predict(X_test))* df_test['A']  # Inverse log transformation to get the original scale
 
-        res_df = df_test[['Q']].copy()
+        res_df = pd.DataFrame(index=df_test.index)  # Create an empty DataFrame with the same index as df_test
+        if not prediction_set:
+            # we want to keep the original discharge values if this is a testing
+            res_df = df_test[['Q']].copy()
         res_df.loc[:, 'Q_sim'] = predictions
 
         return res_df

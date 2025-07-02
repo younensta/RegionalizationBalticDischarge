@@ -410,68 +410,107 @@ if st.session_state.mode == "Testing":
         if len(st.session_state.models) == 0:
             st.warning("No models selected. Please go back to the model selection page and add at least one model.")
         elif len(st.session_state.models) == 1:
-            if st.button("Run training and validation"):
-
-                if st.session_state.how == "Holdout-Validation":
-                    with st.spinner("Running training and validation (this might take a while) ..."):
-                        if st.button("Abort training"):
-                            st.rerun()
-                        st.session_state.models[0].hold_out_validation(st.session_state.train_df,
-                                                            percent=train_percentage,
-                                                            random_seed=st.session_state.random_seed,
-                                                            show_results=True,
-                                                            grouped=True)
-                        st.session_state.res_fig = plt.gcf()
-                        st.success("Training and validation completed!")
+            # Initialize training state if not exists
+            if "training_in_progress" not in st.session_state:
+                st.session_state.training_in_progress = False
+            
+            if not st.session_state.training_in_progress:
+                if st.button("Run training and validation"):
+                    st.session_state.training_in_progress = True
+                    st.rerun()
+            else:
+                # Show abort button when training is in progress
+                col1, col2 = st.columns([0.8, 0.2])
+                with col1:
+                    st.info("Training in progress...")
+                with col2:
+                    if st.button("Abort training"):
+                        st.session_state.training_in_progress = False
+                        st.rerun()
+                
+                # Run the actual training
+                try:
+                    if st.session_state.how == "Holdout-Validation":
+                        with st.spinner("Running training and validation (this might take a while) ..."):
+                            st.session_state.models[0].hold_out_validation(st.session_state.train_df,
+                                                                percent=train_percentage,
+                                                                random_seed=st.session_state.random_seed,
+                                                                show_results=True,
+                                                                grouped=True)
+                            st.session_state.res_fig = plt.gcf()
                         
+                        st.success("Training and validation completed!")
+                        st.session_state.training_in_progress = False
                         st.session_state.step = "RESULTS_PAGE"
                         st.rerun()
 
-                elif st.session_state.how == "Leave-One-Out Cross-Validation":
-                    with st.spinner("Running training and validation (this might take a while) ..."):
-                        if st.button("Abort training"):
-                            st.rerun()
-                        
-                        st.session_state.models[0].leave_one_out_validation(
-                            st.session_state.train_df,
-                            show_results=True,
-                            grouped=True
-                        )
-                        st.success("Training and validation completed!")
-                        st.session.res_fig = plt.gcf()
-
-                        st.session_state.step = "RESULTS_PAGE"
-                        st.rerun()
-        else:
-            if st.button("Run training and validation for all models"):
-                if st.session_state.how == "Holdout-Validation":
-                    with st.spinner("Running training and validation for all models (this might take a while) ..."):
-                        if st.button("Abort training"):
-                            st.rerun()
-
-                        for model in st.session_state.models:
-                            model.hold_out_validation(st.session_state.train_df,
-                                                    percent=train_percentage,
-                                                    random_seed=st.session_state.random_seed,
-                                                    show_results=False,
-                                                    grouped=False)
-                        st.success("Training and validation completed!")
-                        st.session_state.step = "RESULTS_PAGE"
-                        st.rerun()
-                elif st.session_state.how == "Leave-One-Out Cross-Validation":
-                    with st.spinner("Running training and validation for all models (this might take a while) ..."):
-                        if st.button("Abort training"):
-                            st.rerun()
-                        
-                        for model in st.session_state.models:
-                            model.leave_one_out_validation(
+                    elif st.session_state.how == "Leave-One-Out Cross-Validation":
+                        with st.spinner("Running training and validation (this might take a while) ..."):
+                            st.session_state.models[0].leave_one_out_validation(
                                 st.session_state.train_df,
-                                show_results=False,
-                                grouped=False
+                                show_results=True,
+                                grouped=True
                             )
+                        
                         st.success("Training and validation completed!")
+                        st.session_state.res_fig = plt.gcf()
+                        st.session_state.training_in_progress = False
                         st.session_state.step = "RESULTS_PAGE"
                         st.rerun()
+                except Exception as e:
+                    st.error(f"Training failed: {e}")
+                    st.session_state.training_in_progress = False
+        else:
+            # Initialize training state for multiple models if not exists
+            if "training_multiple_in_progress" not in st.session_state:
+                st.session_state.training_multiple_in_progress = False
+            
+            if not st.session_state.training_multiple_in_progress:
+                if st.button("Run training and validation for all models"):
+                    st.session_state.training_multiple_in_progress = True
+                    st.rerun()
+            else:
+                # Show abort button when training is in progress
+                col1, col2 = st.columns([0.8, 0.2])
+                with col1:
+                    st.info("Training multiple models in progress...")
+                with col2:
+                    if st.button("Abort training"):
+                        st.session_state.training_multiple_in_progress = False
+                        st.rerun()
+                
+                # Run the actual training
+                try:
+                    if st.session_state.how == "Holdout-Validation":
+                        with st.spinner("Running training and validation for all models (this might take a while) ..."):
+                            for model in st.session_state.models:
+                                model.hold_out_validation(st.session_state.train_df,
+                                                        percent=train_percentage,
+                                                        random_seed=st.session_state.random_seed,
+                                                        show_results=False,
+                                                        grouped=False)
+                        
+                        st.success("Training and validation completed!")
+                        st.session_state.training_multiple_in_progress = False
+                        st.session_state.step = "RESULTS_PAGE"
+                        st.rerun()
+                        
+                    elif st.session_state.how == "Leave-One-Out Cross-Validation":
+                        with st.spinner("Running training and validation for all models (this might take a while) ..."):
+                            for model in st.session_state.models:
+                                model.leave_one_out_validation(
+                                    st.session_state.train_df,
+                                    show_results=False,
+                                    grouped=False
+                                )
+                        
+                        st.success("Training and validation completed!")
+                        st.session_state.training_multiple_in_progress = False
+                        st.session_state.step = "RESULTS_PAGE"
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Training failed: {e}")
+                    st.session_state.training_multiple_in_progress = False
 
         back = st.button("Back to Model Selection")
         if back:
@@ -996,23 +1035,32 @@ elif st.session_state.mode == "Prediction":
                 st.warning("Geographical Neighbors requires basin centroid coordinates (lat, lon). Please provide them in the data loading.")
             else:
                 with st.spinner("Preparing spatial data..."):
-                    ids = st.session_state.train_df[['ID', 'lon', 'lat']].drop_duplicates(subset='ID')
+                    ids_train = st.session_state.train_df[['ID', 'lon', 'lat']].drop_duplicates(subset='ID')
                     
                 # The following lines will be executed while the spinner is shown
-                    gdf = gpd.GeoDataFrame(
-                        ids['ID'],
-                        geometry=gpd.points_from_xy(ids['lon'], ids['lat']),
+                    gdf_train = gpd.GeoDataFrame(
+                        ids_train['ID'],
+                        geometry=gpd.points_from_xy(ids_train['lon'], ids_train['lat']),
                         crs="EPSG:4326"
                     )
                     # convert to a metric CRS for distance calculations
-                    gdf.to_crs(epsg=3395, inplace=True)
+                    gdf_train.to_crs(epsg=3395, inplace=True)
+
+                    ids_pred = st.session_state.pred_df[['ID', 'lon', 'lat']].drop_duplicates(subset='ID')
+                    gdf_pred = gpd.GeoDataFrame(
+                        ids_pred['ID'],
+                        geometry=gpd.points_from_xy(ids_pred['lon'], ids_pred['lat']),
+                        crs="EPSG:4326"
+                    )
+                    # convert to a metric CRS for distance calculations
+                    gdf_pred.to_crs(epsg=3395, inplace=True)
 
                 n_neighbors = st.number_input(
                     "Number of Neighbors",
                     min_value=1, max_value=100, value=5, step=1,
                     key="geo_n_neighbors"
                 )
-                st.session_state.neighboring_strategy = ns.SpatialNeighboring(gdf, gdf, n_neighbors=n_neighbors)
+                st.session_state.neighboring_strategy = ns.SpatialNeighboring(gdf_train, gdf_pred, n_neighbors=n_neighbors)
 
 
 
@@ -1038,16 +1086,143 @@ elif st.session_state.mode == "Prediction":
         st.write(st.session_state.models[0].name)
 
         if st.button("Train model and predict discharge"):
-            with st.spinner("Running training and prediction (this might take a while) ..."):
+            st.session_state.prediction_in_progress = True
+            st.rerun()
+            
+        # Initialize prediction state if not exists
+        if "prediction_in_progress" not in st.session_state:
+            st.session_state.prediction_in_progress = False
+            
+        if st.session_state.prediction_in_progress:
+            # Show abort button when prediction is in progress
+            col1, col2 = st.columns([0.8, 0.2])
+            with col1:
+                st.info("Training and prediction in progress...")
+            with col2:
                 if st.button("Abort"):
+                    st.session_state.prediction_in_progress = False
                     st.rerun()
-                
-                st.session_state.models[0].fit(st.session_state.train_df)
-                st.success("Training completed! Now predicting discharge...")
-                st.session_state.res_df = st.session_state.models[0].predict(st.session_state.pred_df, prediction_set = True)
+            
+            # Run the actual training and prediction
+            try:
+                with st.spinner("Running training and prediction (this might take a while) ..."):
+                    st.session_state.models[0].fit(st.session_state.train_df)
+                    st.success("Training completed! Now predicting discharge...")
+                    st.session_state.res_df = st.session_state.models[0].predict(st.session_state.pred_df, prediction_set = True)
 
-
+                st.session_state.prediction_in_progress = False
                 st.session_state.step = "RESULTS_PAGE"
                 st.rerun()
+            except Exception as e:
+                st.error(f"Training/Prediction failed: {e}")
+                st.session_state.prediction_in_progress = False
     if st.session_state.step == "RESULTS_PAGE":
-        st.write("hello")
+        df = st.session_state.res_df
+        st.title("Results")
+        st.success("Model sucessfully predicted discharge")
+
+        st.write("**Predicted Discharge Data:**")
+            
+        with st.expander("Show Predicted Data", expanded=False):    
+            st.dataframe(df)
+        st.write("Download the predicted discharge data as a CSV file:")
+        csv = df.to_csv().encode('utf-8')
+        st.download_button(
+            label="Download CSV",
+            data=csv,
+            file_name='predicted_discharge.csv',
+            mime='text/csv'
+        )
+
+        if st.session_state.show_coords:
+            if st.session_state.temp_step == 'YEAR':
+                years = st.session_state.res_df.index.get_level_values('YEAR').unique()
+
+                selected_year = st.selectbox(
+                    "Select Year to Plot",
+                    options=years,
+                    key="year_map"
+                )
+
+                plot_df = st.session_state.res_df[st.session_state.res_df.index.get_level_values('YEAR') == selected_year].copy()
+
+            elif st.session_state.temp_step == 'SEASON':
+                years = st.session_state.res_df.index.get_level_values('YEAR').unique()
+                season = st.session_state.res_df.index.get_level_values('SEASON').unique()
+
+
+                selected_year = st.selectbox(
+                    "Select Year to Plot",
+                    options=years,
+                    key="year_map"
+                )
+                selected_season = st.selectbox(
+                    "Select Season to Plot",
+                    options=season,
+                    key="season_map"
+                )
+
+                plot_df = st.session_state.res_df[(st.session_state.res_df.index.get_level_values('YEAR') == selected_year) & 
+                                                  (st.session_state.res_df.index.get_level_values('SEASON') == selected_season)].copy()
+            
+            elif st.session_state.temp_step == 'MONTH':
+                years = st.session_state.res_df.index.get_level_values('YEAR').unique()
+                months = st.session_state.res_df.index.get_level_values('MONTH').unique()
+
+                selected_year = st.selectbox(
+                    "Select Year to Plot",
+                    options=years,
+                    key="year_map"
+                )
+                selected_month = st.selectbox(
+                    "Select Month to Plot",
+                    options=months,
+                    key="month_map"
+                )
+
+                plot_df = st.session_state.res_df[(st.session_state.res_df.index.get_level_values('YEAR') == selected_year) &
+                                                  (st.session_state.res_df.index.get_level_values('MONTH') == selected_month)].copy()
+                
+
+            cmap = plt.get_cmap('RdYlGn')
+            
+            # Unpack MultiIndex to columns if present
+            plot_df = plot_df.reset_index()
+
+            plot_df = plot_df.merge(
+                st.session_state.pred_df[['ID', 'lon', 'lat', 'A']].drop_duplicates(subset='ID'),
+                on='ID',
+                how='left',            )
+            plot_df['Q_sim/A (m3/s /m2)'] = plot_df['Q_sim']/ plot_df['A']
+        
+
+            fig = px.scatter_mapbox(
+                plot_df, 
+                lat="lat", 
+                lon="lon", 
+                color='Q_sim/A (m3/s /m2)',
+                range_color=[0, 0.05],
+                color_continuous_scale="tropic",
+                hover_data={
+                    'ID': False,
+                    'Q_sim': ':.2f',
+                    'lon': False,
+                    'lat': False},
+                hover_name='ID',
+                title=f"Discharge Values by Station",
+                mapbox_style="carto-positron",
+                zoom=3
+                )
+            
+            fig.update_layout(
+                mapbox_style="carto-positron",
+                height=600,
+                margin={"r":0,"t":30,"l":0,"b":0}
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+
+        if st.button("Back to Model Selection"):
+            st.session_state.step = "MODEL_SELECTION_PAGE"
+            st.rerun()
+
