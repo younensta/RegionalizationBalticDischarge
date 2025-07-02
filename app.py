@@ -225,7 +225,7 @@ if st.session_state.mode == "Testing":
         st.title("Model Selection")
 
         st.write("**Select the predictors to use for the model:**")
-        pred = [col for col in st.session_state.train_df.columns if col not in ['ID', 'Q', 'A', 'YEAR', 'MONTH', 'SEASON', 'lat', 'lon']]
+        pred = [col for col in st.session_state.train_df.columns if col not in ['ID', 'Q', 'YEAR', 'MONTH', 'SEASON']]
         predictors = st.multiselect(
             "Select Predictors",
             options=pred,
@@ -932,7 +932,7 @@ elif st.session_state.mode == "Prediction":
         st.title("Model Selection")
 
         st.write("**Select the predictors to use for the model:**")
-        pred = [col for col in st.session_state.train_df.columns if col not in ['ID', 'Q', 'A', 'YEAR', 'MONTH', 'SEASON', 'lat', 'lon']]
+        pred = [col for col in st.session_state.train_df.columns if col not in ['ID', 'Q', 'YEAR', 'MONTH', 'SEASON']]
         predictors = st.multiselect(
             "Select Predictors",
             options=pred,
