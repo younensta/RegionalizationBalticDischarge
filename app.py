@@ -46,6 +46,23 @@ if "res_fig" not in st.session_state:
 st.set_page_config(page_title="Data Driven Regionalization Models for Surface Discharge")
 
 
+def check_ask_for_column(train_df, default_value):
+            if default_value in train_df.columns:
+                st.success(f"Column '{default_value}' found in the dataframe. If it is not the correct column, please rename it in your data as this name is reserved.")
+            else:
+                name = st.text_input(
+                    f"Please enter the name of {default_value} column in your dataframe",
+                    value=default_value
+                )
+                if name in train_df.columns:
+                    st.success(f"Column '{name}' found in the dataframe.")
+                    train_df.rename(columns={name: default_value}, inplace=True)
+                else:
+                    st.error(f"Column '{name}' not found in the dataframe. Please check your data.")
+
+
+
+
 
 with st.sidebar:
     st.header("Mode Selection")
@@ -92,21 +109,6 @@ if st.session_state.mode == "Testing":
             "Select Temporal Step",
             ["Seasonal", "Monthly", "Yearly"]
         )
-
-        def check_ask_for_column(train_df, default_value):
-            if default_value in train_df.columns:
-                st.success(f"Column '{default_value}' found in the dataframe. If it is not the correct column, please rename it in your data.")
-            else:
-                name = st.text_input(
-                    f"Please enter the name of {default_value} column in your dataframe",
-                    value=default_value
-                )
-                if name in train_df.columns:
-                    st.success(f"Column '{name}' found in the dataframe.")
-                    train_df.rename(columns={name: default_value}, inplace=True)
-                else:
-                    st.error(f"Column '{name}' not found in the dataframe. Please check your data.")
-
 
 
         if data_source == "Upload your own data" and uploaded_file is not None:
@@ -615,4 +617,201 @@ if st.session_state.mode == "Testing":
             st.rerun()
 
 elif st.session_state.mode == "Prediction":
-    st.write("Working on it...")
+    if st.session_state.step == "DATA_LOAD_PAGE":
+        st.title("**Data Driven Regionalization Models for Surface Discharge**")
+
+        st.title("Data Load and Preparation")
+    
+        data_source = st.radio(
+                "Select Data for the molel to train on",
+                ("Use Baltic Sea GRDC dataset", "Upload your own data")
+            )
+
+        if data_source == "Use Baltic Sea GRDC dataset":
+            st.info("Using the built-in Baltic Sea GRDC dataset.")
+            st.session_state.data_from_user_source = False
+            uploaded_file = None  # Disable upload
+        else:
+            uploaded_file = st.file_uploader("Upload your data file (.csv)", type=["csv"])
+            if uploaded_file is not None:
+                st.success("File uploaded successfully!")
+                train_df = pd.read_csv(uploaded_file)
+                st.session_state.data_from_user_source = True
+                st.write("Data Preview:")
+                st.dataframe(train_df.head())
+
+        temporal_step = st.selectbox(
+            "Select Temporal Step",
+            ["Seasonal", "Monthly", "Yearly"]
+        )
+
+
+
+        if data_source == "Upload your own data" and uploaded_file is not None:
+            st.write("Basin and Temporal Identification")
+            if temporal_step == 'Yearly':
+                check_ask_for_column(train_df, 'YEAR')
+                st.session_state.temp_step = 'YEAR'
+            
+            elif temporal_step == 'Monthly':
+                check_ask_for_column(train_df, 'MONTH')
+                check_ask_for_column(train_df, 'YEAR')
+                st.session_state.temp_step = 'MONTH'
+            elif temporal_step == 'Seasonal':
+                check_ask_for_column(train_df, 'SEASON')
+                check_ask_for_column(train_df, 'YEAR')
+                st.session_state.temp_step = 'SEASON'
+            
+            check_ask_for_column(train_df, 'ID')
+
+            st.write("Discharge Column")
+            check_ask_for_column(train_df, 'Q')
+            st.write("Drainage Area Column (Models are using specific discharge)")
+            check_ask_for_column(train_df, 'A')
+
+            st.write("Optional: Basin Centroid Coordinates")
+            st.info("Providing 'lat' and 'lon' columns (latitude and longitude) is optional, but required if you want to plot results on a geographical map.")
+            
+            show_coords = st.checkbox("Provide Basin Coordinate Columns (", value=False)
+            if show_coords:
+                check_ask_for_column(train_df, 'lon')
+                check_ask_for_column(train_df, 'lat')
+                st.session_state.show_coords = True
+            else:
+                st.session_state.show_coords = False
+
+
+        else:
+            if temporal_step == 'Yearly':
+                train_df = pd.read_csv('DATA/DF/df_grdc.csv')
+                st.session_state.temp_step = 'YEAR'
+            elif temporal_step == 'Monthly':
+                train_df = pd.read_csv('DATA/DF/df_grdc_month.csv')
+                st.session_state.temp_step = 'MONTH'
+            elif temporal_step == 'Seasonal':
+                train_df = pd.read_csv('DATA/DF/df_grdc_season.csv')
+                st.session_state.temp_step = 'SEASON'
+            st.session_state.show_coords = True  # Default to True for built-in dataset
+            
+            
+        if data_source == "Use Baltic Sea GRDC dataset" or\
+                    (uploaded_file is not None and all(col in train_df.columns for col in ['ID', 'Q', 'A', 'YEAR'] if temporal_step == 'Yearly') and \
+                    all(col in train_df.columns for col in ['ID', 'Q', 'A', 'YEAR', 'MONTH'] if temporal_step == 'Monthly') and \
+                    all(col in train_df.columns for col in ['ID', 'Q', 'A', 'YEAR', 'SEASON'] if temporal_step == 'Seasonal') and\
+                    (not st.session_state.show_coords or (st.session_state.show_coords and all(col in train_df.columns for col in ['lat', 'lon'])))):
+            st.success("Data validation successful! You can proceed with the data to use for prediction")
+            
+            source_ready = True
+          
+
+        else:
+            source_ready = False
+        ### prediction data loading
+        if source_ready:
+
+            data_source = st.radio(
+                    "Select Data for the molel to train on",
+                    ("Use Baltic Sea BSDB dataset", "Upload your own data")
+                )
+
+            if data_source == "Use Baltic Sea BSDB dataset":
+                st.info("Using the built-in Baltic Sea BSDB dataset.")
+                st.session_state.data_from_user_source = False
+                predictor_file = None  # Disable upload
+            else:
+                predictor_file = st.file_uploader("Upload your data file (.csv)", type=["csv"],
+                                                  key="predictor_file")
+                if predictor_file is not None:
+                    st.success("File uploaded successfully!")
+                    pred_df = pd.read_csv(predictor_file)
+                    st.session_state.data_from_user_source = True
+                    st.write("Data Preview:")
+                    st.dataframe(pred_df.head())
+
+
+            if data_source == "Upload your own data" and predictor_file is not None:
+                st.write("Basin and Temporal Identification")
+                if st.session_state.temp_step == 'YEAR':
+                    check_ask_for_column(pred_df, 'YEAR')
+                    
+                
+                elif st.session_state.temp_step == 'MONTH':
+                    check_ask_for_column(pred_df, 'MONTH')
+                    check_ask_for_column(pred_df, 'YEAR')
+                    
+                elif st.session_state.temp_step == 'SEASON':
+                    check_ask_for_column(pred_df, 'SEASON')
+                    check_ask_for_column(pred_df, 'YEAR')
+                    
+                
+                check_ask_for_column(pred_df, 'ID')
+
+                
+                st.write("Drainage Area Column (Models are using specific discharge)")
+                check_ask_for_column(pred_df, 'A')
+
+                st.write("Optional: Basin Centroid Coordinates")
+                st.info("Providing 'lat' and 'lon' columns (latitude and longitude) is optional, but required if you want to use geographical neighboring or to plot results on a geographical map.")
+                
+                if st.session_state.show_coords:
+                    st.info("Coordinates have been provided in the training data. Please ensure that they are also present in the prediction data.")
+                    check_ask_for_column(pred_df, 'lon')
+                    check_ask_for_column(pred_df, 'lat')
+
+
+                #Keeping only the columns that are needed for the prediction AND warning if some columns are not in the training data
+                col_train = train_df.columns.tolist()
+                col_pred = pred_df.columns.tolist()
+                predictors_train = [col for col in col_train if col not in ['ID', 'Q', 'A', 'YEAR', 'MONTH', 'SEASON']]
+                predictors_pred = [col for col in col_pred if col not in ['ID', 'A', 'YEAR', 'MONTH', 'SEASON']]
+
+                in_train_not_in_pred = [col for col in predictors_train if col not in predictors_pred]
+                in_pred_not_in_train = [col for col in predictors_pred if col not in predictors_train] 
+
+                if len(in_train_not_in_pred) > 0:
+                    st.warning(f"The following predictors are in the training data but not in the prediction data: {', '.join(in_train_not_in_pred)} (These predictors will be dropped and cannot be used for prediction)")
+                if len(in_pred_not_in_train) > 0:
+                    st.warning(f"The following predictors are in the prediction data but not in the training data: {', '.join(in_pred_not_in_train)} (These predictors will be dropped and cannot be used for prediction)")
+                st.info("Common predictors for training and prediction data will be used for the prediction. If you want to use all predictors, please ensure that they are present in both datasets under the same names." \
+                " The following predictors will be available for the prediction: " + \
+                ", ".join([col for col in predictors_train if col in predictors_pred]))
+
+            else:
+                if st.session_state.temp_step == 'YEAR':
+                    pred_df = pd.read_csv('DATA/DF/df_bsdb.csv')                   
+                elif st.session_state.temp_step == 'MONTH':
+                    pred_df = pd.read_csv('DATA/DF/df_bsdb_month.csv')                   
+                elif st.session_state.temp_step == 'SEASON':
+                    pred_df = pd.read_csv('DATA/DF/df_bsdb_season.csv')
+
+            if data_source == "Use Baltic Sea BSDB dataset" or\
+                        (predictor_file is not None and all(col in pred_df.columns for col in ['ID', 'A', 'YEAR'] if temporal_step == 'Yearly') and \
+                        all(col in pred_df.columns for col in ['ID', 'A', 'YEAR', 'MONTH'] if temporal_step == 'Monthly') and \
+                        all(col in pred_df.columns for col in ['ID', 'A', 'YEAR', 'SEASON'] if temporal_step == 'Seasonal') and\
+                        (not st.session_state.show_coords or (st.session_state.show_coords and all(col in pred_df.columns for col in ['lat', 'lon'])))):
+                st.success("Data validation successful! You can proceed with the data to use for prediction")
+                
+                predictions_ready = True
+            else:
+                predictions_ready = False
+
+            
+
+
+
+        if source_ready and predictions_ready:
+            if st.button("Next step"):
+                col1, col2 = st.columns([0.9, 0.15])
+                with col2:
+                    st.session_state.step = "MODEL_SELECTION_PAGE"
+
+                    st.session_state.train_df = train_df
+                    st.session_state.pred_df = pred_df
+                    st.rerun()
+                    
+        else:
+            st.warning("Please ensure all requirments are fulfilled.")
+    
+    if st.session_state.step == "MODEL_SELECTION_PAGE":
+        pass
+       
