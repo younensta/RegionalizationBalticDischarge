@@ -16,8 +16,8 @@ import plotly.graph_objects as go
 
 
 
-
-st.session_state.mode = "Testing" # Default but can be "Prediction" also
+if "mode" not in st.session_state:    # Initialize session state variables
+    st.session_state.mode = "Testing"  # Default mode
 if "step" not in st.session_state:
     st.session_state.step = "DATA_LOAD_PAGE"
 if "train_df" not in st.session_state:
@@ -66,24 +66,29 @@ def check_ask_for_column(train_df, default_value):
 
 with st.sidebar:
     st.header("Mode Selection")
-    mode = st.radio("Select Mode", ["Testing", "Prediction"], index=0)
-    st.session_state.mode = mode
 
-    if mode == "Testing":
-        st.write("You are in Testing Mode. You can test the models with your own data or the built-in dataset.")
-        if st.session_state.train_df is not None:
-            st.write("Training Data is ready.")
-            st.write("Preview")
-            st.dataframe(st.session_state.train_df.head())
-    else:
-        st.write("You are in Prediction Mode. You can use the models to predict discharge based on your data.")
-    
-    st.write("---")
-    st.write("This app allows you to test and use data-driven regionalization models for surface discharge. You can upload your own data or use the built-in Baltic Sea GRDC dataset.")
+    col1, col2 = st.columns([0.5, 0.5])
+    with col1:
+        test = st.button("Testing Mode")
+    with col2:
+        pred = st.button("Prediction Mode")
+    if test:
+        st.session_state.mode = "Testing"
+        st.session_state.step = "DATA_LOAD_PAGE"
+
+    elif pred:
+        st.session_state.mode = "Prediction"
+        st.session_state.step = "DATA_LOAD_PAGE"
+
 
 if st.session_state.mode == "Testing":
+    with st.sidebar:
+        st.write("You are in Testing Mode. You can test the models with your own data or the built-in dataset.")
+
+
+
     if st.session_state.step == "DATA_LOAD_PAGE":
-        st.title("**Data Driven Regionalization Models for Surface Discharge**")
+        st.title("**Testing models for discharge prediction**")
 
         st.title("Data Load and Preparation")
     
@@ -406,6 +411,8 @@ if st.session_state.mode == "Testing":
 
                 if st.session_state.how == "Holdout-Validation":
                     with st.spinner("Running training and validation (this might take a while) ..."):
+                        if st.button("Abort training"):
+                            st.rerun()
                         st.session_state.models[0].hold_out_validation(st.session_state.train_df,
                                                             percent=train_percentage,
                                                             random_seed=st.session_state.random_seed,
@@ -419,6 +426,9 @@ if st.session_state.mode == "Testing":
 
                 elif st.session_state.how == "Leave-One-Out Cross-Validation":
                     with st.spinner("Running training and validation (this might take a while) ..."):
+                        if st.button("Abort training"):
+                            st.rerun()
+                        
                         st.session_state.models[0].leave_one_out_validation(
                             st.session_state.train_df,
                             show_results=True,
@@ -433,6 +443,9 @@ if st.session_state.mode == "Testing":
             if st.button("Run training and validation for all models"):
                 if st.session_state.how == "Holdout-Validation":
                     with st.spinner("Running training and validation for all models (this might take a while) ..."):
+                        if st.button("Abort training"):
+                            st.rerun()
+
                         for model in st.session_state.models:
                             model.hold_out_validation(st.session_state.train_df,
                                                     percent=train_percentage,
@@ -444,6 +457,9 @@ if st.session_state.mode == "Testing":
                         st.rerun()
                 elif st.session_state.how == "Leave-One-Out Cross-Validation":
                     with st.spinner("Running training and validation for all models (this might take a while) ..."):
+                        if st.button("Abort training"):
+                            st.rerun()
+                        
                         for model in st.session_state.models:
                             model.leave_one_out_validation(
                                 st.session_state.train_df,
@@ -617,13 +633,16 @@ if st.session_state.mode == "Testing":
             st.rerun()
 
 elif st.session_state.mode == "Prediction":
+    with st.sidebar:
+        st.write("You are in Prediction Mode. You can use the models to predict discharge based on your data.")
+
     if st.session_state.step == "DATA_LOAD_PAGE":
-        st.title("**Data Driven Regionalization Models for Surface Discharge**")
+        st.title("**Predicting Discharge Data**")
 
         st.title("Data Load and Preparation")
     
         data_source = st.radio(
-                "Select Data for the molel to train on",
+                "Select Data for the model to predict dicharge on",
                 ("Use Baltic Sea GRDC dataset", "Upload your own data")
             )
 
@@ -710,7 +729,7 @@ elif st.session_state.mode == "Prediction":
         if source_ready:
 
             data_source = st.radio(
-                    "Select Data for the molel to train on",
+                    "Select Data for the model to train on",
                     ("Use Baltic Sea BSDB dataset", "Upload your own data")
                 )
 
@@ -813,5 +832,202 @@ elif st.session_state.mode == "Prediction":
             st.warning("Please ensure all requirments are fulfilled.")
     
     if st.session_state.step == "MODEL_SELECTION_PAGE":
+        st.title("Model Selection")
+        
+        
+        if len(st.session_state.models) == 0:
+            st.info("No model added yet. Please add your model to proceed.")
+        for i, model in enumerate(st.session_state.models):
+            col1, col2 = st.columns([0.8, 0.2])
+            with col1:
+                st.write(f"Model: {model.name}")
+            with col2:
+                remove = st.button(f"Remove",
+                                key=f"remove_{i}",)
+            if remove:
+                st.session_state.models.remove(model)
+                st.rerun()
+
+        if len(st.session_state.models) == 0:
+            add = st.button("Add Model")
+            if add:
+                st.session_state.step = "ADD_MODEL_PAGE"
+                st.rerun()
+        elif len(st.session_state.models) > 1:
+            st.error("You have more than one model.Please select only one model to proceed with the prediction or change to testing mode to compare several models.")
+        elif len(st.session_state.models) == 1:
+            st.success("You have one model selected. You can proceed with the prediction.")
+        col1, col2 = st.columns([0.9, 0.15])
+
+        with col1:
+            if st.button("Back to Data Load"):
+                st.session_state.step = "DATA_LOAD_PAGE"
+                st.rerun()
+        with col2:
+            if len(st.session_state.models) == 1:    
+                next = st.button("Next step")
+                if next:
+                    if len(st.session_state.models) < 1:
+                        st.warning("Please add at least one model.")
+                    else:
+                        st.session_state.step = "COMPUTATION_PAGE"
+                        st.rerun()
+
+    if st.session_state.step == "ADD_MODEL_PAGE":
+        st.title("Model Selection")
+
+        st.write("**Select the predictors to use for the model:**")
+        pred = [col for col in st.session_state.train_df.columns if col not in ['ID', 'Q', 'A', 'YEAR', 'MONTH', 'SEASON', 'lat', 'lon']]
+        predictors = st.multiselect(
+            "Select Predictors",
+            options=pred,
+            default=pred[:]  # Default to all predictors
+            )
+        st.write("**Select the type of regression to use:**")
+        regression_type = st.selectbox(
+            "Regression Type",
+            ["Multiple Linear Regression", "Random Forest"]        
+        )
+
+        if regression_type == "Multiple Linear Regression":
+            reg = bm.OlsLogMLR(predictors=predictors)
+
+        elif regression_type == "Random Forest":
+            max_depth = st.number_input("Max Depth", min_value=1, max_value=50, value=10, step=5)
+            n_trees = st.number_input("Number of Trees", min_value=5, max_value=200, value=20, step=5)
+            reg = bm.LogRF(predictors=predictors, max_depth=max_depth, n_trees=n_trees)
+
+
+        st.write("**Choose grouping strategies to apply (subgroups are created recursively if more then one are added):**")
+        
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            add = st.button("Add Grouping Strategy")
+            if add:
+                st.session_state.nb_strategies += 1
+        with col2:
+            rm = st.button("Remove Grouping Strategy")
+            if rm:
+                if st.session_state.nb_strategies > 0:
+                    st.session_state.nb_strategies -= 1
+
+        st.session_state.grouping_strategies = [None]*st.session_state.nb_strategies
+        predictors_for_clustering = [None]*st.session_state.nb_strategies
+        if st.session_state.nb_strategies > 3:
+            st.warning("You have added more than 3 grouping strategies. This may lead to a very long computation time and potential empty groups.")
+        
+        
+        for i in range(st.session_state.nb_strategies):
+            strat_type = st.selectbox(
+                f"**Select Grouping Strategy {i+1}**",
+                ["KMeans clustering", "Temporal clustering"],
+                key=f"grouping_strategy_{i}"
+            )
+            if strat_type == "KMeans clustering":
+                predictors_for_clustering[i] = st.multiselect(
+                    f"Select Predictors for clustering",
+                    options=pred+['A'],
+                    default=['A'],  # Default to all predictors
+                    key=f"predictors_for_clustering_{i}"
+                )
+                n_clusters = st.number_input(
+                    f"Number of Clusters",
+                    min_value=2, max_value=20, value=5, step=1,
+                    key=f"n_clusters_{i}"
+                )
+                min_size = st.number_input(
+                    f"Minimum Size of Cluster",
+                    min_value=1, max_value=100, value=5, step=1,
+                    key=f"min_size_{i}"
+                )
+
+                st.session_state.grouping_strategies[i] = gs.KmeansClustering(cluster_column=predictors_for_clustering[i], n_clusters=n_clusters, min_members=min_size)
+            elif strat_type == "Temporal clustering":
+                temporal_step = st.selectbox(
+                    f"Select Temporal Step for Strategy {i+1}",
+                    ["Yearly", "Monthly", "Seasonal"],
+                    key=f"temporal_step_{i}"
+                )
+                if temporal_step == "Yearly":
+                    temporal_step = "YEAR"
+                elif temporal_step == "Monthly":
+                    if "MONTH" not in st.session_state.train_df.columns:
+                        st.error("MONTH column is required for Monthly temporal step. Please check your data.")
+                        temporal_step = None
+                    temporal_step = "MONTH"
+                elif temporal_step == "Seasonal":
+                    if "SEASON" not in st.session_state.train_df.columns:
+                        st.error("SEASON column is required for Seasonal temporal step. Please check your data.")
+                        temporal_step = None
+                    temporal_step = "SEASON"
+
+                st.session_state.grouping_strategies[i] = gs.TemporalGrouping(temporal_step)
+
+        st.write("**Choose neighboring strategies to apply (One specific model will be trained only on the nearest neighbors):**")
+        neighbor_strat = st.selectbox(
+            "Select Neighboring Strategy",
+            ["None", "Euclidean distance", "Geographical Neighbors"],
+            key="neighboring"
+        )
+        
+        if neighbor_strat == "None":
+            st.session_state.neighboring_strategy = None
+        elif neighbor_strat == "Euclidean distance":
+            n_neighbors = st.number_input(
+                "Number of Neighbors",
+                min_value=1, max_value=100, value=5, step=1,
+                key="n_neighbors"
+            )
+            columns = st.multiselect(
+                "Select Columns for Euclidean Distance",
+                options=pred+['A'],
+                default=['A'],  # Default to all predictors
+                key="euclidean_columns"
+            )
+            if len(columns) < 1:
+                st.warning("Please select at least one column for Euclidean distance.")
+            else:
+                st.session_state.neighboring_strategy = ns.EuclidianNeighbors(n_neighbors=n_neighbors, columns=columns)
+        elif neighbor_strat == "Geographical Neighbors":
+            if not st.session_state.show_coords:
+                st.warning("Geographical Neighbors requires basin centroid coordinates (lat, lon). Please provide them in the data loading.")
+            else:
+                with st.spinner("Preparing spatial data..."):
+                    ids = st.session_state.train_df[['ID', 'lon', 'lat']].drop_duplicates(subset='ID')
+                    
+                # The following lines will be executed while the spinner is shown
+                    gdf = gpd.GeoDataFrame(
+                        ids['ID'],
+                        geometry=gpd.points_from_xy(ids['lon'], ids['lat']),
+                        crs="EPSG:4326"
+                    )
+                    # convert to a metric CRS for distance calculations
+                    gdf.to_crs(epsg=3395, inplace=True)
+
+                n_neighbors = st.number_input(
+                    "Number of Neighbors",
+                    min_value=1, max_value=100, value=5, step=1,
+                    key="geo_n_neighbors"
+                )
+                st.session_state.neighboring_strategy = ns.SpatialNeighboring(gdf, gdf, n_neighbors=n_neighbors)
+
+
+
+        if len(st.session_state.grouping_strategies) == 0:
+            st.session_state.grouping_strategies = None
+
+
+        if st.button("Add this model"):
+            model = am.GeneralModel(
+                time_step=st.session_state.temp_step,
+                reg_model=reg,
+                grouping_strategy=st.session_state.grouping_strategies,
+                neighboring_strategy=st.session_state.neighboring_strategy
+            )
+            st.session_state.models.append(model)
+            st.session_state.step = "MODEL_SELECTION_PAGE"
+            st.rerun()
+    
+    if st.session_state.step == "COMPUTATION_PAGE":
         pass
-       
+        
