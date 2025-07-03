@@ -569,13 +569,13 @@ if st.session_state.mode == "Testing":
                 
                 df[f'{indic.name} legend'] = np.clip(df[indic.name], indic.x_min, indic.x_max)
                 
-                fig = px.scatter_mapbox(
+                fig = px.scatter_map(
                     df,
                     lat="lat", 
                     lon="lon", 
                     color=f'{indic.name} legend',
                     color_continuous_scale="RdYlGn_r" if not indic.anti else "RdYlGn",
-
+                    range_color=[indic.x_min, indic.x_max],
                     hover_data={
                         'ID': False,
                         indic.name: ':.2f',
@@ -585,12 +585,12 @@ if st.session_state.mode == "Testing":
                     },
                     hover_name='ID',
                     title=f"{name} Values by Station",
-                    mapbox_style="carto-positron",
+                    map_style="carto-positron",
                     zoom=3
                 )
                 
                 fig.update_layout(
-                    mapbox_style="carto-positron",
+                    map_style="carto-positron",
                     height=600,
                     margin={"r":0,"t":30,"l":0,"b":0}
                 )
@@ -1208,7 +1208,7 @@ elif st.session_state.mode == "Prediction":
             plot_df['Q_sim/A (m3/s /m2)'] = plot_df['Q_sim']/ plot_df['A']
         
 
-            fig = px.scatter_mapbox(
+            fig = px.scatter_map(
                 plot_df, 
                 lat="lat", 
                 lon="lon", 
@@ -1222,12 +1222,12 @@ elif st.session_state.mode == "Prediction":
                     'lat': False},
                 hover_name='ID',
                 title=f"Discharge Values by Station",
-                mapbox_style="carto-positron",
+                map_style="carto-positron",
                 zoom=3
                 )
             
             fig.update_layout(
-                mapbox_style="carto-positron",
+                map_style="carto-positron",
                 height=600,
                 margin={"r":0,"t":30,"l":0,"b":0}
             )
