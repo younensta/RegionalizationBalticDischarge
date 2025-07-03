@@ -86,6 +86,6 @@ class KmeansClustering(GroupingStrategy):
         test_df_for_clustering = self.scaler.transform(test_df_for_clustering)
 
         # Predict clusters
-        test_df_copy[f'KMEANS_{self.cluster_column}_GROUP'] = self.model.predict(test_df_for_clustering)
+        test_df_copy[f'KMEANS_{self.cluster_column}_GROUP'] = self.model.predict(test_df_for_clustering, size_min=None, size_max=None)# we don't need to specify size_min and size_max for prediction
         return test_df_copy, f'KMEANS_{self.cluster_column}_GROUP'
     
