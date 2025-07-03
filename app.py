@@ -565,23 +565,15 @@ if st.session_state.mode == "Testing":
 
             if st.session_state.show_coords:
                 cmap = plt.get_cmap('RdYlGn')
-                if indic.anti:
-                    # Normalize and clamp
-                    normalized_values = (df[indic.name] - indic.x_min) / (indic.x_max - indic.x_min)
-                    normalized_values = np.clip(normalized_values, indic.x_min, indic.x_max)  # Clamp between 0 and 1
-                    df[f'{indic.name} legend'] = normalized_values
-                else:
-                    # Normalize and clamp values between 0 and 1 (inverted)
-                    normalized_values = (indic.x_max - df[indic.name]) / (indic.x_max - indic.x_min)
-                    normalized_values = np.clip(normalized_values, indic.x_min, indic.x_max)  # Clamp between 0 and 1
-                    df[f'{indic.name} legend'] = normalized_values
-            
+
+                
+                df[f'{indic.name} legend'] = np.clip(df[indic.name], indic.x_min, indic.x_max)
+                
                 fig = px.scatter_mapbox(
-                    df, 
+                    df,
                     lat="lat", 
                     lon="lon", 
                     color=f'{indic.name} legend',
-                    range_color=[indic.x_min, indic.x_max],
                     color_continuous_scale="RdYlGn_r" if not indic.anti else "RdYlGn",
 
                     hover_data={
