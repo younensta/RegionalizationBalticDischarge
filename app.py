@@ -48,6 +48,16 @@ if "res_fig" not in st.session_state:
 st.set_page_config(page_title="Data Driven Regionalization Models for Surface Discharge")
 
 
+# Session state initialization for model selection page
+if "default_pred" not in st.session_state:
+    st.session_state.default_pred = None  # Default option for prediction
+if "default_model_type" not in st.session_state:
+    st.session_state.default_model_type = "Multiple Linear Regression"  # Default model type
+if "default_max_depth" not in st.session_state:
+    st.session_state.default_max_depth = 30  # Default max depth for Random Forest
+if "default_nb_tress" not in st.session_state:
+    st.session_state.default_nb_tress = 20  # Default number of trees for Random Forest   
+
 
 def check_ask_for_column(train_df, default_value):
             if default_value in train_df.columns:
@@ -229,20 +239,22 @@ if st.session_state.mode == "Testing":
         predictors = st.multiselect(
             "Select Predictors",
             options=pred,
-            default=pred[:]  # Default to all predictors
+            default=pred if st.session_state.default_pred is None else st.session_state.default_pred
             )
+
         st.write("**Select the type of regression to use:**")
         regression_type = st.selectbox(
             "Regression Type",
-            ["Multiple Linear Regression", "Random Forest"]        
+            ["Multiple Linear Regression", "Random Forest"],
+            index=0 if st.session_state.default_model_type == "Multiple Linear Regression" else 1
         )
 
         if regression_type == "Multiple Linear Regression":
             reg = bm.OlsLogMLR(predictors=predictors)
 
         elif regression_type == "Random Forest":
-            max_depth = st.number_input("Max Depth", min_value=1, max_value=50, value=10, step=5)
-            n_trees = st.number_input("Number of Trees", min_value=5, max_value=200, value=20, step=5)
+            max_depth = st.number_input("Max Depth", min_value=1, max_value=50, value=st.session_state.default_max_depth, step=5)
+            n_trees = st.number_input("Number of Trees", min_value=5, max_value=200, value=st.session_state.default_nb_tress, step=5)
             reg = bm.LogRF(predictors=predictors, max_depth=max_depth, n_trees=n_trees)
 
 
@@ -376,7 +388,13 @@ if st.session_state.mode == "Testing":
                 model.name = name
 
         if st.button("Add this model"):
-            
+            # Adding default values
+            st.session_state.default_pred = predictors  # Store selected predictors in session state
+            st.session_state.default_model_type = regression_type  # Store model type in session state
+            st.session_state.default_max_depth = max_depth if regression_type == "Random Forest" else st.session_state.default_max_depth
+            st.session_state.default_nb_tress = n_trees if regression_type == "Random Forest" else st.session_state.default_nb_tress
+
+
 
             st.session_state.models.append(model)
             st.session_state.step = "MODEL_SELECTION_PAGE"
@@ -928,21 +946,24 @@ elif st.session_state.mode == "Prediction":
         predictors = st.multiselect(
             "Select Predictors",
             options=pred,
-            default=pred[:]  # Default to all predictors
+                 default=pred if st.session_state.default_pred is None else st.session_state.default_pred
             )
+
         st.write("**Select the type of regression to use:**")
         regression_type = st.selectbox(
             "Regression Type",
-            ["Multiple Linear Regression", "Random Forest"]        
+            ["Multiple Linear Regression", "Random Forest"],
+            index=0 if st.session_state.default_model_type == "Multiple Linear Regression" else 1
         )
 
         if regression_type == "Multiple Linear Regression":
             reg = bm.OlsLogMLR(predictors=predictors)
 
         elif regression_type == "Random Forest":
-            max_depth = st.number_input("Max Depth", min_value=1, max_value=50, value=10, step=5)
-            n_trees = st.number_input("Number of Trees", min_value=5, max_value=200, value=20, step=5)
+            max_depth = st.number_input("Max Depth", min_value=1, max_value=50, value=st.session_state.default_max_depth, step=5)
+            n_trees = st.number_input("Number of Trees", min_value=5, max_value=200, value=st.session_state.default_nb_tress, step=5)
             reg = bm.LogRF(predictors=predictors, max_depth=max_depth, n_trees=n_trees)
+
 
 
         st.write("**Choose grouping strategies to apply (subgroups are created recursively if more then one are added):**")
@@ -1085,7 +1106,11 @@ elif st.session_state.mode == "Prediction":
                 model.name = name
 
         if st.button("Add this model"):
-            
+                   # Adding default values
+            st.session_state.default_pred = predictors  # Store selected predictors in session state
+            st.session_state.default_model_type = regression_type  # Store model type in session state
+            st.session_state.default_max_depth = max_depth if regression_type == "Random Forest" else st.session_state.default_max_depth
+            st.session_state.default_nb_tress = n_trees if regression_type == "Random Forest" else st.session_state.default_nb_tress 
 
             st.session_state.models.append(model)
             st.session_state.step = "MODEL_SELECTION_PAGE"
