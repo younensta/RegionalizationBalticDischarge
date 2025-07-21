@@ -388,7 +388,9 @@ class GeneralModel:
                             single_test_df = group_test_df.loc[[data_id]]
                             group_predictions = model.predict(single_test_df, prediction_set=prediction_set)
                             res_df.loc[data_id, 'Q_sim'] = group_predictions['Q_sim'].values[0]
-                        
+
+        # Sort the results DataFrame by index
+        res_df = res_df.sort_index()         
         return res_df
 
     def _compute_metrics(self, df: pd.DataFrame):
@@ -737,8 +739,39 @@ class GeneralModel:
 
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
         plt.show(block=blocked)
+    
+    def predict_using_measures(self, train_df: pd.DataFrame, diff_df: pd.DataFrame, prediction_set: bool = False):
+        """
+        Predicts using the measurments from the diff_df DataFrame.
+        This method is used to predict the values using model for the ungauged areas only diff_df DataFrame.
+        This dataframe contains either the stats for geometric difference or the difference between the ungauged and gauged areas, either the basin if ID_GRDC is NaN
+        """
 
-    def hold_out_validation(self, df:pd.DataFrame, percent:int =10, random_seed:int =42, show_results:bool =True, grouped:bool =True):
+        if self._is_fitted == False:
+            raise RuntimeError("Model must be fitted before prediction.")
+
+        pred = diff_df.drop(columns=['ID_GRDC'])
+
+        res = self.predict(pred, prediction_set=prediction_set) # Does not have the contributions of gauged areas yet
+        TIME_LOC = self.data_index.copy()
+        TIME_LOC.remove('ID') 
+        
+        # Add the contributions of gauged areas
+
+        res = res.merge(diff_df[['ID', 'ID_GRDC']+TIME_LOC], on=['ID']+TIME_LOC, how='left')
+        res = res.merge(train_df[['ID', 'Q']+TIME_LOC].rename(columns={'ID': 'ID_GRDC', 'Q': 'Q_gauged'}), on=['ID_GRDC']+TIME_LOC, how='left')
+        # Q_gauged should be NaN if ID_GRDC is NaN
+        res['Q_sim'] = res['Q_sim'] + res['Q_gauged'].fillna(0)
+        res = res.drop(columns=['Q_gauged'])
+
+        res.set_index(self.data_index, inplace=True)
+        res = res.sort_index()
+
+
+        return res
+
+
+    def hold_out_validation(self, df:pd.DataFrame, diff_df:Optional[pd.DataFrame] = None, percent:int =10, random_seed:int =42, show_results:bool =True, grouped:bool =True):
         """
         Performs hold-out validation on the provided DataFrame.
         """
@@ -752,14 +785,29 @@ class GeneralModel:
         #Train the model on the training DataFrame
         self.fit(train_df)
         #Evaluate the model on the test DataFrame
-        self.holdout_df = self.predict(test_df)
+        if diff_df is not None:
+            # If diff_df is provided, use it to predict using measures
+            contaminated_diff = diff_df[diff_df['ID_GRDC'].isin(test_ids)] # Basin where the gauged area is in test set 
+            safe_diff = diff_df[~diff_df['ID_GRDC'].isin(test_ids)] # Basins where the gauged area is in train set or no gauged area
+            #For all contaminated lines, we replace by the original values from train_df
+            contaminated_diff = contaminated_diff[self.data_index + ['ID_GRDC']].copy()
+            decontaminated_df = contaminated_diff.merge(train_df, on=self.data_index, how='left')
+            decontaminated_df['ID_GRDC'] = np.nan # These basin have their orginal values from train_df, so we set ID_GRDC to NaN
+            breakpoint()
+            diff_df = pd.concat([decontaminated_df, safe_diff], axis=0)
+
+            self.holdout_df = self.predict_using_measures(train_df, diff_df, prediction_set=False)
+        else:
+            # Otherwise, use the standard prediction method
+            self.holdout_df = self.predict(test_df)
+        
         #Compute metrics for the hold-out results
         self._compute_metrics(self.holdout_df)
         #Show the results
         if show_results:
             self._show_results(self.holdout_df, grouped=grouped, blocked=True)
-
-    def leave_one_out_validation(self, df: pd.DataFrame, show_results: bool = True, grouped: bool = False):
+ 
+    def leave_one_out_validation(self, df: pd.DataFrame, diff_df: Optional[pd.DataFrame] = None, show_results: bool = True, grouped: bool = False):
         """
         Performs leave-one-out validation on the provided DataFrame.
         Can take a lot of time because it fits a new model for each ID in the Dataframe
@@ -784,7 +832,11 @@ class GeneralModel:
                 test_df = df[df['ID'] == id]
 
                 self.fit(train_df)
-                res = self.predict(test_df)
+                if diff_df is not None:
+                    # No contamination in LOO as only one basin has a predicted flow, so we can use the diff_df directly
+                    res = self.predict_using_measures(train_df, diff_df, prediction_set=False)
+                else:                    
+                    res = self.predict(test_df)
                 res_index = res.index #We take res index to leave NaNs where clean deleted rows
 
                 df_loo.loc[res_index, 'Q_sim'] = res['Q_sim'].values
