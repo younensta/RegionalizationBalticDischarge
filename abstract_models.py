@@ -338,6 +338,9 @@ class GeneralModel:
             if group_path not in self.final_groups.keys():
                 logger.warning(f"No training data for group {group_path}. Skipping prediction for this group. Please consider using a different clustering strategy or check your data.")
                 continue
+            if len(group_test_df) == 0:
+                logger.warning(f"No data in group {group_path}. Skipping prediction for this group.")
+                continue
             
             if self.neighboring_strategy is None:
                 if group_path in self.models:
