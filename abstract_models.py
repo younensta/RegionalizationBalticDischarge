@@ -14,6 +14,7 @@ import matplotlib.gridspec as gridspec
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
+import time
 
 
 class BaseModel:
@@ -747,12 +748,15 @@ class GeneralModel:
         This dataframe contains either the stats for geometric difference or the difference between the ungauged and gauged areas, either the basin if ID_GRDC is NaN
         """
 
+        t_0 = time.time()
         if self._is_fitted == False:
             raise RuntimeError("Model must be fitted before prediction.")
 
         pred = diff_df.drop(columns=['ID_GRDC'])
 
         res = self.predict(pred, prediction_set=prediction_set) # Does not have the contributions of gauged areas yet
+        print("Prediction time:", time.time() - t_0)
+        t2 = time.time()
         TIME_LOC = self.data_index.copy()
         TIME_LOC.remove('ID') 
         
@@ -766,6 +770,8 @@ class GeneralModel:
 
         res.set_index(self.data_index, inplace=True)
         res = res.sort_index()
+        print("Merge time:", time.time() - t2)
+
 
 
         return res
@@ -795,8 +801,9 @@ class GeneralModel:
             decontaminated_df['ID_GRDC'] = np.nan # These basin have their orginal values from train_df, so we set ID_GRDC to NaN
             
             diff_df = pd.concat([decontaminated_df, safe_diff], axis=0)
+            diff_df_reduced = diff_df[diff_df['ID'].isin(test_ids)] # We only keep the diff_df for the test set
 
-            self.holdout_df = self.predict_using_measures(train_df, diff_df, prediction_set=False)
+            self.holdout_df = self.predict_using_measures(train_df, diff_df_reduced, prediction_set=False)
         else:
             # Otherwise, use the standard prediction method
             self.holdout_df = self.predict(test_df)
@@ -834,7 +841,8 @@ class GeneralModel:
                 self.fit(train_df)
                 if diff_df is not None:
                     # No contamination in LOO as only one basin has a predicted flow, so we can use the diff_df directly
-                    res = self.predict_using_measures(train_df, diff_df, prediction_set=False)
+                    diff_df_reduced = diff_df[diff_df['ID'] == id]
+                    res = self.predict_using_measures(train_df, diff_df_reduced, prediction_set=False)
                 else:                    
                     res = self.predict(test_df)
                 res_index = res.index #We take res index to leave NaNs where clean deleted rows
