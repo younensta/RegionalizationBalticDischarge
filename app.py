@@ -20,6 +20,7 @@ if "mode" not in st.session_state:    # Initialize session state variables
     st.session_state.mode = "Testing"  # Default mode
 if "step" not in st.session_state:
     st.session_state.step = "DATA_LOAD_PAGE"
+
 if "train_df" not in st.session_state:
     st.session_state.train_df = None
 if "models" not in st.session_state:
@@ -45,6 +46,12 @@ if "res_df" not in st.session_state:
 
 if "res_fig" not in st.session_state:
     st.session_state.res_fig = None
+
+if "diff_df" not in st.session_state:
+    st.session_state.diff_df = None  # Default difference dataframe
+if "difference" not in st.session_state:
+    st.session_state.difference = False  # Default to using difference dataframe for validation
+
 st.set_page_config(page_title="Data Driven Regionalization Models for Surface Discharge")
 
 
@@ -73,6 +80,32 @@ def check_ask_for_column(train_df, default_value):
                 else:
                     st.error(f"Column '{name}' not found in the dataframe. Please check your data.")
 
+def initialize_session_state():
+    
+    st.session_state.step = "DATA_LOAD_PAGE"    
+    st.session_state.train_df = None
+    st.session_state.models = []
+    st.session_state.indicators = None
+    st.session_state.show_coords = False
+    st.session_state.nb_strategies = 0
+    st.session_state.data_from_user_source = False  # Default data source
+    st.session_state.temp_step = None  # Default temporal step
+    st.session_state.nb_models = 0  # Default number of models
+    st.session_state.random_seed = 42  # Default random seed for reproducibility
+    st.session_state.how = "Holdout-Validation"  # Default validation method
+    st.session_state.res_df = None  # Default result dataframe
+
+    st.session_state.res_fig = None
+    st.session_state.diff_df = None  # Default difference dataframe
+    st.session_state.difference = False  # Default to using difference dataframe for validation
+
+
+# Session state initialization for model selection page
+    st.session_state.default_pred = None  # Default option for prediction
+    st.session_state.default_model_type = "Multiple Linear Regression"  # Default model type
+    st.session_state.default_max_depth = 30  # Default max depth for Random Forest
+    st.session_state.default_nb_tress = 20  # Default number of trees for Random Forest   
+
 
 
 
@@ -87,11 +120,11 @@ with st.sidebar:
         pred = st.button("Prediction Mode")
     if test:
         st.session_state.mode = "Testing"
-        st.session_state.step = "DATA_LOAD_PAGE"
+        initialize_session_state()
 
     elif pred:
         st.session_state.mode = "Prediction"
-        st.session_state.step = "DATA_LOAD_PAGE"
+        initialize_session_state()
 
 
 if st.session_state.mode == "Testing":
@@ -166,12 +199,15 @@ if st.session_state.mode == "Testing":
         else:
             if temporal_step == 'Yearly':
                 train_df = pd.read_csv('DATA/DF/df_grdc.csv')
+                diff_df = pd.read_csv('DATA/DIFF/df_diff_GRDC_GRDC.csv')
                 st.session_state.temp_step = 'YEAR'
             elif temporal_step == 'Monthly':
                 train_df = pd.read_csv('DATA/DF/df_grdc_month.csv')
+                diff_df = pd.read_csv('DATA/DIFF/df_diff_month_GRDC_GRDC.csv')
                 st.session_state.temp_step = 'MONTH'
             elif temporal_step == 'Seasonal':
                 train_df = pd.read_csv('DATA/DF/df_grdc_season.csv')
+                diff_df = pd.read_csv('DATA/DIFF/df_diff_season_GRDC_GRDC.csv')
                 st.session_state.temp_step = 'SEASON'
             st.session_state.show_coords = True  # Default to True for built-in dataset
             
@@ -187,6 +223,7 @@ if st.session_state.mode == "Testing":
             with col2:
                 if st.button("Next step"):
                     st.session_state.train_df = train_df
+                    st.session_state.diff_df = diff_df
                     st.session_state.step = 'MODEL_SELECTION_PAGE'
                     st.rerun()
 
@@ -410,6 +447,14 @@ if st.session_state.mode == "Testing":
             "Please select the validation method",
             ("Holdout-Validation", "Leave-One-Out Cross-Validation")
         )
+        if not st.session_state.data_from_user_source:
+            difference = st.checkbox(
+                "Use observed discharge from gauging stations when available",
+                value=st.session_state.difference,
+                help="This option is only available for the built-in Baltic Sea GRDC dataset. It computes the flow using the model only for areas that have no measurements, and utilizes data from gauging stations in the result. " \
+                "When disabled, the model computes the flow for the entire basin, including areas with measurements. " \
+                "In testing mode, this option uses only the data available in the training set to avoid data leakage." \
+            )
         if st.session_state.how == "Holdout-Validation":
             st.write("Holdout-Validation will be used. Please select the percentage of data to use for training.")
             train_percentage = st.slider(
@@ -456,12 +501,22 @@ if st.session_state.mode == "Testing":
                 try:
                     if st.session_state.how == "Holdout-Validation":
                         with st.spinner("Running training and validation (this might take a while) ..."):
-                            st.session_state.models[0].hold_out_validation(st.session_state.train_df,
+                            if not difference:
+                                st.session_state.models[0].hold_out_validation(st.session_state.train_df,
                                                                 percent=train_percentage,
                                                                 random_seed=st.session_state.random_seed,
                                                                 show_results=True,
                                                                 grouped=True)
+                            else:
+                                st.session_state.models[0].hold_out_validation(st.session_state.train_df,
+                                                                percent=train_percentage,
+                                                                random_seed=st.session_state.random_seed,
+                                                                show_results=True,
+                                                                grouped=True,
+                                                                diff_df=st.session_state.diff_df)
                             st.session_state.res_fig = plt.gcf()
+                        
+                        st.session_state.difference = difference
                         
                         st.success("Training and validation completed!")
                         st.session_state.training_in_progress = False
@@ -470,11 +525,20 @@ if st.session_state.mode == "Testing":
 
                     elif st.session_state.how == "Leave-One-Out Cross-Validation":
                         with st.spinner("Running training and validation (this might take a while) ..."):
-                            st.session_state.models[0].leave_one_out_validation(
-                                st.session_state.train_df,
-                                show_results=True,
-                                grouped=True
-                            )
+                            if not st.session_state.difference:
+                                st.session_state.models[0].leave_one_out_validation(
+                                    st.session_state.train_df,
+                                    show_results=True,
+                                    grouped=True
+                                )
+                            else:
+                                st.session_state.models[0].leave_one_out_validation(
+                                    st.session_state.train_df,
+                                    show_results=True,
+                                    grouped=True,
+                                    diff_df=st.session_state.diff_df
+                                )
+                        st.session_state.difference = difference
                         
                         st.success("Training and validation completed!")
                         st.session_state.res_fig = plt.gcf()
@@ -508,12 +572,22 @@ if st.session_state.mode == "Testing":
                     if st.session_state.how == "Holdout-Validation":
                         with st.spinner("Running training and validation for all models (this might take a while) ..."):
                             for model in st.session_state.models:
-                                model.hold_out_validation(st.session_state.train_df,
+                                if not st.session_state.difference:
+                                    model.hold_out_validation(st.session_state.train_df,
                                                         percent=train_percentage,
                                                         random_seed=st.session_state.random_seed,
                                                         show_results=False,
                                                         grouped=False)
+                                else:
+                                    model.hold_out_validation(st.session_state.train_df,
+                                                        percent=train_percentage,
+                                                        random_seed=st.session_state.random_seed,
+                                                        show_results=False,
+                                                        grouped=False,
+                                                        diff_df=st.session_state.diff_df)
                         
+
+                        st.session_state.difference = difference
                         st.success("Training and validation completed!")
                         st.session_state.training_multiple_in_progress = False
                         st.session_state.step = "RESULTS_PAGE"
@@ -522,12 +596,21 @@ if st.session_state.mode == "Testing":
                     elif st.session_state.how == "Leave-One-Out Cross-Validation":
                         with st.spinner("Running training and validation for all models (this might take a while) ..."):
                             for model in st.session_state.models:
-                                model.leave_one_out_validation(
-                                    st.session_state.train_df,
-                                    show_results=False,
-                                    grouped=False
-                                )
-                        
+                                if not st.session_state.difference:
+                                    model.leave_one_out_validation(
+                                        st.session_state.train_df,
+                                        show_results=False,
+                                        grouped=False
+                                    )
+                                else:
+                                    model.leave_one_out_validation(
+                                        st.session_state.train_df,
+                                        show_results=True,
+                                        grouped=True,
+                                        diff_df=st.session_state.diff_df
+                                    )
+
+                        st.session_state.difference = difference 
                         st.success("Training and validation completed!")
                         st.session_state.training_multiple_in_progress = False
                         st.session_state.step = "RESULTS_PAGE"
@@ -543,6 +626,8 @@ if st.session_state.mode == "Testing":
 
     if st.session_state.step == "RESULTS_PAGE":
         st.title("Results Page")
+        if st.session_state.difference:
+            st.info("Results are computed using the difference dataframe. This means that the model uses the data from gauging stations when available, and computes the flow only for areas that have no measurements and adds the measured flow to the result. ")
         
         
         if len(st.session_state.models)==1:
@@ -862,11 +947,16 @@ elif st.session_state.mode == "Prediction":
 
             else:
                 if st.session_state.temp_step == 'YEAR':
-                    pred_df = pd.read_csv('DATA/DF/df_bsdb.csv')                   
+                    pred_df = pd.read_csv('DATA/DF/df_bsdb.csv') 
+                    diff_df = pd.read_csv('DATA/DIFF/df_diff_BSDB_GRDC.csv')
+                  
                 elif st.session_state.temp_step == 'MONTH':
-                    pred_df = pd.read_csv('DATA/DF/df_bsdb_month.csv')                   
+                    pred_df = pd.read_csv('DATA/DF/df_bsdb_month.csv') 
+                    diff_df = pd.read_csv('DATA/DIFF/df_diff_month_BSDB_GRDC.csv')                  
                 elif st.session_state.temp_step == 'SEASON':
                     pred_df = pd.read_csv('DATA/DF/df_bsdb_season.csv')
+                    diff_df = pd.read_csv('DATA/DIFF/df_diff_season_BSDB_GRDC.csv')
+                st.session_state.diff_df = diff_df
 
             if data_source == "Use Baltic Sea BSDB dataset" or\
                         (predictor_file is not None and all(col in pred_df.columns for col in ['ID', 'A', 'YEAR'] if temporal_step == 'Yearly') and \
@@ -1122,10 +1212,26 @@ elif st.session_state.mode == "Prediction":
         st.write("**Selected Model:**")
         st.write(st.session_state.models[0].name)
 
-        if st.button("Train model and predict discharge"):
-            st.session_state.prediction_in_progress = True
-            st.rerun()
-            
+        if not st.session_state.data_from_user_source:
+            difference = st.checkbox(
+                    "Use observed discharge from gauging stations when available",
+                    value=st.session_state.difference,
+                    help="This option is only available for the built-in Baltic Sea GRDC dataset. It computes the flow using the model only for areas that have no measurements, and utilizes data from gauging stations in the result. " \
+                    "When disabled, the model computes the flow for the entire basin, including areas with measurements. " \
+                    "In testing mode, this option uses only the data available in the training set to avoid data leakage." \
+                )
+        col1, col2 = st.columns([0.5, 0.5])
+        with col1:
+            if st.button("Back to Model Selection"):
+                st.session_state.step = "MODEL_SELECTION_PAGE"
+                st.rerun()
+
+        with col2:
+            if st.button("Train model and predict discharge"):
+                st.session_state.prediction_in_progress = True
+                st.rerun()
+        
+
         # Initialize prediction state if not exists
         if "prediction_in_progress" not in st.session_state:
             st.session_state.prediction_in_progress = False
@@ -1139,24 +1245,34 @@ elif st.session_state.mode == "Prediction":
                 if st.button("Abort"):
                     st.session_state.prediction_in_progress = False
                     st.rerun()
-            
             # Run the actual training and prediction
             try:
                 with st.spinner("Running training and prediction (this might take a while) ..."):
                     st.session_state.models[0].fit(st.session_state.train_df)
                     st.success("Training completed! Now predicting discharge...")
-                    st.session_state.res_df = st.session_state.models[0].predict(st.session_state.pred_df, prediction_set = True)
+                    if not difference:
+                        st.session_state.res_df = st.session_state.models[0].predict(st.session_state.pred_df, prediction_set = True)
+                    else:
+                        st.session_state.res_df = st.session_state.models[0].predict_using_measures(
+                            st.session_state.train_df,
+                            st.session_state.diff_df, 
+                            prediction_set=True, 
+                        )
 
+                st.session_state.difference = difference                 
                 st.session_state.prediction_in_progress = False
                 st.session_state.step = "RESULTS_PAGE"
                 st.rerun()
             except Exception as e:
                 st.error(f"Training/Prediction failed: {e}")
                 st.session_state.prediction_in_progress = False
+
     if st.session_state.step == "RESULTS_PAGE":
         df = st.session_state.res_df
         st.title("Results")
         st.success("Model sucessfully predicted discharge")
+        if st.session_state.difference:
+            st.info("Results are computed using the difference dataframe. This means that the model uses the data from gauging stations when available, and computes the flow only for areas that have no measurements and adds the measured flow to the result. ")
 
         st.write("**Predicted Discharge Data:**")
             
