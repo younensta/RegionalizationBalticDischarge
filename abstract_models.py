@@ -793,7 +793,7 @@ class GeneralModel:
             contaminated_diff = contaminated_diff[self.data_index + ['ID_GRDC']].copy()
             decontaminated_df = contaminated_diff.merge(train_df, on=self.data_index, how='left')
             decontaminated_df['ID_GRDC'] = np.nan # These basin have their orginal values from train_df, so we set ID_GRDC to NaN
-            breakpoint()
+            
             diff_df = pd.concat([decontaminated_df, safe_diff], axis=0)
 
             self.holdout_df = self.predict_using_measures(train_df, diff_df, prediction_set=False)
