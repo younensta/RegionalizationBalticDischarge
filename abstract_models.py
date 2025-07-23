@@ -14,8 +14,6 @@ import matplotlib.gridspec as gridspec
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
-import time
-
 
 class BaseModel:
     """
@@ -748,15 +746,12 @@ class GeneralModel:
         This dataframe contains either the stats for geometric difference or the difference between the ungauged and gauged areas, either the basin if ID_GRDC is NaN
         """
 
-        t_0 = time.time()
         if self._is_fitted == False:
             raise RuntimeError("Model must be fitted before prediction.")
 
         pred = diff_df.drop(columns=['ID_GRDC'])
 
         res = self.predict(pred, prediction_set=prediction_set) # Does not have the contributions of gauged areas yet
-        print("Prediction time:", time.time() - t_0)
-        t2 = time.time()
         TIME_LOC = self.data_index.copy()
         TIME_LOC.remove('ID') 
         
@@ -770,7 +765,6 @@ class GeneralModel:
 
         res.set_index(self.data_index, inplace=True)
         res = res.sort_index()
-        print("Merge time:", time.time() - t2)
 
 
 
