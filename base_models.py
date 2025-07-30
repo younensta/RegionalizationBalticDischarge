@@ -23,6 +23,7 @@ class OlsLogMLR(BaseModel):
     def __init__(self, predictors:List[str] = None):
         super().__init__('OLS_Log_MLR:', predictors)
         self.model = None
+        self.scaler = StandardScaler()
 
 
     def fit(self, df_train):
@@ -38,7 +39,7 @@ class OlsLogMLR(BaseModel):
         
         # Add a constant for the intercept
         X = df_train[self.predictors]
-        X = StandardScaler().fit_transform(X)  # Normalize the predictors
+        X = self.scaler.fit_transform(X)  # Normalize the predictors
 
         # Fit the model using OLS
         self.model = LinearRegression()
@@ -60,7 +61,7 @@ class OlsLogMLR(BaseModel):
         # Prepare the test data
         
         X_test = df_test[self.predictors]
-        X_test = StandardScaler().fit_transform(X_test)
+        X_test = self.scaler.transform(X_test)
 
         # Make predictions
         predictions = self.model.predict(X_test)
@@ -90,6 +91,7 @@ class LogRF(BaseModel):
         
         self.model = RandomForestRegressor(n_estimators=n_trees, max_depth=max_depth, random_state=random_state)
         self._is_fitted = False
+        self.scaler = StandardScaler()
 
     def fit(self, df_train: pd.DataFrame):
         """
@@ -99,7 +101,7 @@ class LogRF(BaseModel):
 
         # Prepare the training data
         X_train = df_train[self.predictors]
-        X_train = StandardScaler().fit_transform(X_train)  # Normalize the predictors
+        X_train = self.scaler.fit_transform(X_train)  # Normalize the predictors
 
         y_train = np.log(df_train['Q']/df_train['A'])  # Log-transform the target variable
 
@@ -120,7 +122,7 @@ class LogRF(BaseModel):
 
         # Prepare the test data
         X_test = df_test[self.predictors]
-        X_test = StandardScaler().fit_transform(X_test)
+        X_test = self.scaler.transform(X_test)
 
         # Make predictions
         predictions = np.exp(self.model.predict(X_test))* df_test['A']  # Inverse log transformation to get the original scale
