@@ -151,9 +151,18 @@ def fig_single_indicator(indicator: Type[idcts.Metric], model: GeneralModel,
             ax.axvline(x=val, ymin=0, ymax=percentile, color=color2, linestyle='--', alpha=0.8)
 
             # Add text label at the intersection point
-            ax.text(val, 100*percentile, f"{percentile*100:.0f}%:{val:.2f}:", 
+            ax.text(val, 100*percentile, f"{percentile*100:.0f}%:{val:.2f}", 
                     bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor='none'),
-                    color='black', fontsize=8, ha='left', va='bottom')
+                    color='black', fontsize=18, ha='left', va='bottom')
+            
+    # Make font size bigger
+    for label in (ax.get_xticklabels() + ax.get_yticklabels()):
+        label.set_fontsize(14)
+    # Make title font size bigger
+    ax.title.set_fontsize(18)
+    # Make axis labels font size bigger
+    ax.xaxis.label.set_fontsize(16)
+    ax.yaxis.label.set_fontsize(16)
     
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     return fig 
