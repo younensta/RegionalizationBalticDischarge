@@ -64,8 +64,7 @@ class APBIAS(Metric):
     anti = False
     
     def __call__(self, actual, fitted):
-        return np.mean(np.abs((fitted - actual) / actual)) * 100 if np.any(actual) else np.nan
-
+        return np.abs(PBIAS()(actual, fitted))
 class RSME(Metric):
     """
     Root Mean Square Error (RMSE) metric.
