@@ -44,7 +44,11 @@ def add_cumulative_indicator(indicator_class: Type[idcts.Metric] , basin_metric_
             # Add text label at the intersection point
             ax.text(indicator_class.x_min, 100*percentile, f"{percentile*100:.0f}%:", 
                     bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor='none'),
-                    color='black', fontsize=8, ha='left', va='bottom')
+                    color='black', fontsize=14, ha='left', va='bottom')
+            
+            ax.text(val, 100*percentile, f"{val:.2f}", 
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor='none'),
+                    color='black', fontsize=14, ha='left', va='bottom')
 
 
 def plot_models_results(indicators: List[Type[idcts.Metric]], models: List[GeneralModel],

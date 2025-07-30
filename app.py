@@ -759,6 +759,9 @@ if st.session_state.mode == "Testing":
 
                         ax.grid(True, alpha=0.5)
 
+                        
+                        
+
                         colors = plt.get_cmap('cividis', len(st.session_state.models))
 
                         for i, model in enumerate(st.session_state.models):
@@ -769,6 +772,14 @@ if st.session_state.mode == "Testing":
                                 ax=ax,
                                 color =colors(i), 
                                 anti = indic.anti)
+                        
+                        for label in (ax.get_xticklabels() + ax.get_yticklabels()):
+                            label.set_fontsize(12)
+                        # set axis title font size
+                        ax.set_xlabel(ax.get_xlabel(), fontsize=14)
+                        ax.set_ylabel(ax.get_ylabel(), fontsize=14)
+                        ax.set_title(ax.get_title(), fontsize=16)
+                        
                         
                         ax.legend(loc='upper left', fontsize=10)
                         st.pyplot(fig)
