@@ -455,6 +455,7 @@ if st.session_state.mode == "Testing":
                 "When disabled, the model computes the flow for the entire basin, including areas with measurements. " \
                 "In testing mode, this option uses only the data available in the training set to avoid data leakage." \
             )
+            st.session_state.difference = difference
         if st.session_state.how == "Holdout-Validation":
             st.write("Holdout-Validation will be used. Please select the percentage of data to use for training.")
             train_percentage = st.slider(
@@ -780,8 +781,13 @@ if st.session_state.mode == "Testing":
                         ax.set_ylabel(ax.get_ylabel(), fontsize=14)
                         ax.set_title(ax.get_title(), fontsize=16)
                         
-                        
-                        ax.legend(loc='upper left', fontsize=10)
+                        if indic.anti:
+                            ax.legend(loc='lower left', fontsize=10)
+                        else:
+                            ax.legend(loc='lower right', fontsize=10)
+
+                            
+
                         st.pyplot(fig)
 
 
@@ -1231,6 +1237,7 @@ elif st.session_state.mode == "Prediction":
                     "When disabled, the model computes the flow for the entire basin, including areas with measurements. " \
                     "In testing mode, this option uses only the data available in the training set to avoid data leakage." \
                 )
+            st.session_state.difference = difference
         col1, col2 = st.columns([0.5, 0.5])
         with col1:
             if st.button("Back to Model Selection"):
